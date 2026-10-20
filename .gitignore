@@ -1,0 +1,19 @@
+
+# Java / Maven
+**/target/
+**/build/
+
+# Node / React
+**/node_modules/
+**/dist/
+
+# Secrets and environment files
+**/.env
+**/.env.*
+!**/.env.example
+
+# IDE and operating system files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

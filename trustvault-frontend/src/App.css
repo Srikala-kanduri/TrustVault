@@ -1,0 +1,132 @@
+
+#root {
+  min-height: 100vh;
+}
+
+.login-page {
+  min-height: 100vh;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 24px;
+  background: #0b0d12;
+  color: #f5f5f7;
+  font-family: Arial, sans-serif;
+}
+
+.login-card {
+  width: 100%;
+  max-width: 420px;
+  padding: 40px;
+  border: 1px solid #292d38;
+  border-radius: 18px;
+  background: #141720;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+}
+
+.brand-icon {
+  width: 42px;
+  height: 42px;
+  display: grid;
+  place-items: center;
+  border-radius: 12px;
+  background: #8b1e2d;
+  font-size: 22px;
+  font-weight: bold;
+}
+
+.brand h1 {
+  margin: 0;
+  font-size: 27px;
+}
+
+.subtitle,
+.description,
+.security-note {
+  color: #a3a8b7;
+  text-align: center;
+  line-height: 1.6;
+}
+
+.subtitle {
+  margin: 14px 0 34px;
+  font-size: 13px;
+}
+
+.login-card h2 {
+  margin-bottom: 8px;
+  font-size: 25px;
+}
+
+.description {
+  margin: 0 0 26px;
+  text-align: left;
+  font-size: 14px;
+}
+
+.login-card form {
+  display: flex;
+  flex-direction: column;
+}
+
+.login-card label {
+  margin: 16px 0 8px;
+  font-size: 14px;
+}
+
+.login-card input {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 13px 14px;
+  border: 1px solid #363b49;
+  border-radius: 9px;
+  outline: none;
+  background: #0d1017;
+  color: white;
+  font-size: 14px;
+}
+
+.login-card input:focus {
+  border-color: #b83246;
+}
+
+.login-card button {
+  margin-top: 26px;
+  padding: 14px;
+  border: none;
+  border-radius: 9px;
+  background: #96283a;
+  color: white;
+  font-size: 15px;
+  font-weight: bold;
+  cursor: pointer;
+}
+
+.login-card button:hover {
+  background: #b33247;
+}
+
+.security-note {
+  margin: 26px 0 0;
+  font-size: 12px;
+}
+
+@media (max-width: 480px) {
+  .login-card {
+    padding: 28px 22px;
+  }
+}
+
+.connection-status {
+  margin-top: 12px;
+  color: #a3a8b7;
+  text-align: center;
+  font-size: 13px;
+}
