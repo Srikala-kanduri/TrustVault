@@ -8,8 +8,10 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.access.AccessDeniedException;
-
+import java.util.List;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import java.util.Optional;
+import java.time.Instant;
 
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -44,7 +46,7 @@ class DocumentAuthorizationServiceTest {
 
     @BeforeEach
 void setUp() {
-    when(owner.getId()).thenReturn(1L);
+
 }
     private void setUpViewerDocument() {
         when(viewer.getId()).thenReturn(2L);
@@ -57,6 +59,7 @@ void setUp() {
 
     @Test
     void ownerCanReadOwnDocument() {
+        when(owner.getId()).thenReturn(1L);
         when(userRepository.findByEmail("owner@example.com"))
                 .thenReturn(Optional.of(owner));
         when(documentRepository.findById(10L))
@@ -140,4 +143,126 @@ void setUp() {
 
         assertSame(document, result);
     }
+
+
+@Test
+void ownerCanListOwnDocuments() {
+    when(owner.getId()).thenReturn(1L);
+    when(userRepository.findByEmail("owner@example.com"))
+            .thenReturn(Optional.of(owner));
+    when(documentRepository.findAccessibleDocuments(1L))
+            .thenReturn(List.of(document));
+    when(documentRepository.findById(10L))
+            .thenReturn(Optional.of(document));
+    when(document.getId()).thenReturn(10L);
+    when(document.getOwner()).thenReturn(owner);
+
+    List<Document> result =
+            authorizationService.listAccessibleDocuments(
+                    "owner@example.com");
+
+    assertEquals(1, result.size());
+    assertSame(document, result.get(0));
+}
+
+@Test
+void viewerCanListDocumentWithReadPermission() {
+    setUpViewerDocument();
+
+    when(documentRepository.findAccessibleDocuments(2L))
+            .thenReturn(List.of(document));
+    when(permissionRepository.findByDocument_IdAndUser_Id(10L, 2L))
+            .thenReturn(Optional.of(permission));
+    when(document.getId()).thenReturn(10L);
+    when(permission.getPermissionLevel())
+            .thenReturn(DocumentPermission.PermissionLevel.READ);
+
+    List<Document> result =
+            authorizationService.listAccessibleDocuments(
+                    "viewer@example.com");
+
+    assertEquals(1, result.size());
+    assertSame(document, result.get(0));
+}
+
+@Test
+void viewerCannotListDocumentWithoutPermission() {
+    setUpViewerDocument();
+
+    when(documentRepository.findAccessibleDocuments(2L))
+            .thenReturn(List.of(document));
+    when(permissionRepository.findByDocument_IdAndUser_Id(10L, 2L))
+            .thenReturn(Optional.empty());
+    when(document.getId()).thenReturn(10L);
+
+    List<Document> result =
+            authorizationService.listAccessibleDocuments(
+                    "viewer@example.com");
+
+    assertEquals(0, result.size());
+}
+
+
+@Test
+void searchReturnsDocumentWhenUserHasReadPermission() {
+    setUpViewerDocument();
+
+    when(documentRepository.searchAccessibleDocuments(
+            2L, "report", "Finance", null, null, null))
+            .thenReturn(List.of(document));
+    when(document.getId()).thenReturn(10L);
+    when(permissionRepository.findByDocument_IdAndUser_Id(10L, 2L))
+            .thenReturn(Optional.of(permission));
+    when(permission.getPermissionLevel())
+            .thenReturn(DocumentPermission.PermissionLevel.READ);
+
+    List<Document> result =
+            authorizationService.searchAccessibleDocuments(
+                    "viewer@example.com",
+                    " report ",
+                    "Finance",
+                    null,
+                    null,
+                    null);
+
+    assertEquals(1, result.size());
+    assertSame(document, result.get(0));
+}
+
+@Test
+void searchExcludesDocumentWithoutPermission() {
+    setUpViewerDocument();
+
+    when(documentRepository.searchAccessibleDocuments(
+            2L, null, null, null, null, null))
+            .thenReturn(List.of(document));
+    when(document.getId()).thenReturn(10L);
+    when(permissionRepository.findByDocument_IdAndUser_Id(10L, 2L))
+            .thenReturn(Optional.empty());
+
+    List<Document> result =
+            authorizationService.searchAccessibleDocuments(
+                    "viewer@example.com",
+                    null,
+                    null,
+                    null,
+                    null,
+                    null);
+
+    assertEquals(0, result.size());
+}
+
+@Test
+void searchRejectsInvalidDateRange() {
+    assertThrows(
+            IllegalArgumentException.class,
+            () -> authorizationService.searchAccessibleDocuments(
+                    "viewer@example.com",
+                    null,
+                    null,
+                    null,
+                    Instant.parse("2026-10-22T00:00:00Z"),
+                    Instant.parse("2026-10-21T00:00:00Z")));
+}
+
 }

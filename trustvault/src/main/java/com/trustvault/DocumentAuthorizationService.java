@@ -4,6 +4,11 @@ package com.trustvault;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import java.util.List;
+import java.util.stream.Collectors;
+import java.time.Instant;
+import java.util.List;
+import java.util.stream.Collectors;
 
 @Service
 @Transactional(readOnly = true)
@@ -65,6 +70,73 @@ public class DocumentAuthorizationService {
 
         return document;
     }
+
+public List<Document> listAccessibleDocuments(String email) {
+    AppUser user = findUser(email);
+
+    return documentRepository.findAccessibleDocuments(user.getId())
+            .stream()
+            .filter(document -> {
+                try {
+                    requireReadAccess(document.getId(), email);
+                    return true;
+                } catch (AccessDeniedException exception) {
+                    return false;
+                }
+            })
+            .collect(Collectors.toList());
+}
+
+
+public List<Document> searchAccessibleDocuments(
+        String email,
+        String title,
+        String category,
+        String ownerEmail,
+        Instant fromDate,
+        Instant toDate) {
+
+    if (fromDate != null && toDate != null
+            && fromDate.isAfter(toDate)) {
+        throw new IllegalArgumentException(
+                "fromDate must not be after toDate");
+    }
+
+    AppUser user = findUser(email);
+
+    return documentRepository.searchAccessibleDocuments(
+                    user.getId(),
+                    normalizeFilter(title),
+                    normalizeFilter(category),
+                    normalizeEmailFilter(ownerEmail),
+                    fromDate,
+                    toDate)
+            .stream()
+            .filter(document -> {
+                try {
+                    requireReadAccess(document.getId(), email);
+                    return true;
+                } catch (AccessDeniedException exception) {
+                    return false;
+                }
+            })
+            .collect(Collectors.toList());
+}
+
+private String normalizeFilter(String value) {
+    if (value == null || value.isBlank()) {
+        return null;
+    }
+    return value.trim();
+}
+
+private String normalizeEmailFilter(String value) {
+    if (value == null || value.isBlank()) {
+        return null;
+    }
+    return value.trim().toLowerCase(java.util.Locale.ROOT);
+}
+
 
     private AppUser findUser(String email) {
         return userRepository.findByEmail(email.trim().toLowerCase())
