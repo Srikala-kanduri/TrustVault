@@ -17,3 +17,5 @@
 .idea/
 .DS_Store
 Thumbs.db
+# Private uploaded documents
+trustvault-private-files/
