@@ -19,4 +19,6 @@ public interface DocumentPermissionRepository
     void deleteByDocument_IdAndUser_Id(
             Long documentId,
             Long userId);
+
+    void deleteByDocument_Id(Long documentId);
 }

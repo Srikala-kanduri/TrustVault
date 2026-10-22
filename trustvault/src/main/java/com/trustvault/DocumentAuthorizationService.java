@@ -1,14 +1,14 @@
 
 package com.trustvault;
 
+import java.time.Instant;
+import java.util.List;
+import java.util.Locale;
+import java.util.stream.Collectors;
+
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import java.util.List;
-import java.util.stream.Collectors;
-import java.time.Instant;
-import java.util.List;
-import java.util.stream.Collectors;
 
 @Service
 @Transactional(readOnly = true)
@@ -138,11 +138,16 @@ private String normalizeEmailFilter(String value) {
 }
 
 
-    private AppUser findUser(String email) {
-        return userRepository.findByEmail(email.trim().toLowerCase())
-                .orElseThrow(() ->
-                        new AccessDeniedException("Document access denied"));
+   private AppUser findUser(String email) {
+    if (email == null || email.isBlank()) {
+        throw new AccessDeniedException("Document access denied");
     }
+
+    return userRepository.findByEmail(
+                    email.trim().toLowerCase(Locale.ROOT))
+            .orElseThrow(() ->
+                    new AccessDeniedException("Document access denied"));
+}
 
     private Document findDocument(Long documentId) {
         return documentRepository.findById(documentId)

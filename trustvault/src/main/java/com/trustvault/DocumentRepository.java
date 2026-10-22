@@ -15,9 +15,17 @@ public interface DocumentRepository extends JpaRepository<Document, Long> {
     @Query("""
         SELECT DISTINCT d
         FROM Document d
-        LEFT JOIN DocumentPermission p ON p.document = d
         WHERE d.owner.id = :userId
-           OR p.user.id = :userId
+           OR EXISTS (
+               SELECT p.id
+               FROM DocumentPermission p
+               WHERE p.document = d
+                 AND p.user.id = :userId
+                 AND p.permissionLevel IN (
+                     com.trustvault.DocumentPermission.PermissionLevel.READ,
+                     com.trustvault.DocumentPermission.PermissionLevel.EDIT
+                 )
+           )
         ORDER BY d.createdAt DESC
         """)
     List<Document> findAccessibleDocuments(
@@ -26,8 +34,17 @@ public interface DocumentRepository extends JpaRepository<Document, Long> {
     @Query("""
         SELECT DISTINCT d
         FROM Document d
-        LEFT JOIN DocumentPermission p ON p.document = d
-        WHERE (d.owner.id = :userId OR p.user.id = :userId)
+        WHERE (d.owner.id = :userId
+           OR EXISTS (
+               SELECT p.id
+               FROM DocumentPermission p
+               WHERE p.document = d
+                 AND p.user.id = :userId
+                 AND p.permissionLevel IN (
+                     com.trustvault.DocumentPermission.PermissionLevel.READ,
+                     com.trustvault.DocumentPermission.PermissionLevel.EDIT
+                 )
+           ))
           AND (:title IS NULL OR LOWER(d.title) LIKE LOWER(CONCAT('%', :title, '%')))
           AND (:category IS NULL OR LOWER(d.category) = LOWER(:category))
           AND (:ownerEmail IS NULL OR LOWER(d.owner.email) = LOWER(:ownerEmail))

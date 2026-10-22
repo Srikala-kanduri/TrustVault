@@ -9,9 +9,10 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.access.AccessDeniedException;
 
 import java.util.Optional;
-
+import static org.mockito.Mockito.never;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -26,6 +27,9 @@ class DocumentPermissionServiceTest {
 
     @Mock
     private AppUserRepository userRepository;
+
+    @Mock
+    private AuditService auditService;
 
     @Mock
     private AppUser owner;
@@ -61,8 +65,7 @@ class DocumentPermissionServiceTest {
         when(permissionRepository.findByDocument_IdAndUser_Id(10L, 2L))
                 .thenReturn(Optional.empty());
 
-        when(permissionRepository.save(
-                org.mockito.ArgumentMatchers.any(DocumentPermission.class)))
+        when(permissionRepository.save(any(DocumentPermission.class)))
                 .thenAnswer(invocation -> invocation.getArgument(0));
 
         DocumentPermission result = permissionService.grantPermission(
@@ -71,10 +74,17 @@ class DocumentPermissionServiceTest {
                 "target@example.com",
                 DocumentPermission.PermissionLevel.READ);
 
-        assertSame(DocumentPermission.PermissionLevel.READ,
+        assertSame(
+                DocumentPermission.PermissionLevel.READ,
                 result.getPermissionLevel());
 
         verify(permissionRepository).save(result);
+        verify(auditService).record(
+                "owner@example.com",
+                "PERMISSION_GRANT",
+                10L,
+                "Permission READ granted or updated for target@example.com",
+                "SUCCESS");
     }
 
     @Test
@@ -94,18 +104,38 @@ class DocumentPermissionServiceTest {
 
         verify(existingPermission).setPermissionLevel(
                 DocumentPermission.PermissionLevel.EDIT);
+
+        verify(auditService).record(
+                "owner@example.com",
+                "PERMISSION_GRANT",
+                10L,
+                "Permission EDIT granted or updated for target@example.com",
+                "SUCCESS");
     }
 
-    @Test
-    void revokePermissionDeletesExistingGrant() {
-        setUpOwnerAndTarget();
+    
+@Test
+void revokePermissionDeletesExistingGrant() {
+    setUpOwnerAndTarget();
 
-        permissionService.revokePermission(
-                10L, "owner@example.com", "target@example.com");
+    when(permissionRepository
+            .existsByDocument_IdAndUser_Id(10L, 2L))
+            .thenReturn(true);
 
-        verify(permissionRepository)
-                .deleteByDocument_IdAndUser_Id(10L, 2L);
-    }
+    permissionService.revokePermission(
+            10L, "owner@example.com", "target@example.com");
+
+    verify(permissionRepository)
+            .deleteByDocument_IdAndUser_Id(10L, 2L);
+
+    verify(auditService).record(
+            "owner@example.com",
+            "PERMISSION_REVOKE",
+            10L,
+            "Permission revoked for target@example.com",
+            "SUCCESS");
+}
+
 
     @Test
     void nonOwnerCannotGrantPermission() {
@@ -124,5 +154,96 @@ class DocumentPermissionServiceTest {
                         "target@example.com",
                         "owner@example.com",
                         DocumentPermission.PermissionLevel.READ));
+
+        verify(auditService).record(
+                "target@example.com",
+                "PERMISSION_GRANT",
+                10L,
+                "Permission grant denied",
+                "DENIED");
     }
+    
+@Test
+void revokePermissionFailsWhenGrantDoesNotExist() {
+    setUpOwnerAndTarget();
+
+    when(permissionRepository
+            .existsByDocument_IdAndUser_Id(10L, 2L))
+            .thenReturn(false);
+
+    assertThrows(
+            IllegalArgumentException.class,
+            () -> permissionService.revokePermission(
+                    10L, "owner@example.com", "target@example.com"));
+
+    verify(permissionRepository, never())
+            .deleteByDocument_IdAndUser_Id(10L, 2L);
+
+    verify(auditService, never()).record(
+            "owner@example.com",
+            "PERMISSION_REVOKE",
+            10L,
+            "Permission revoked for target@example.com",
+            "SUCCESS");
+}
+
+
+    @Test
+    void grantPermissionPropagatesAuditWriteFailure() {
+        setUpOwnerAndTarget();
+
+        when(permissionRepository.findByDocument_IdAndUser_Id(10L, 2L))
+                .thenReturn(Optional.empty());
+
+        when(permissionRepository.save(any(DocumentPermission.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        org.mockito.Mockito.doThrow(
+                new RuntimeException("Audit database unavailable"))
+                .when(auditService)
+                .record(
+                        "owner@example.com",
+                        "PERMISSION_GRANT",
+                        10L,
+                        "Permission READ granted or updated for target@example.com",
+                        "SUCCESS");
+
+        assertThrows(
+                RuntimeException.class,
+                () -> permissionService.grantPermission(
+                        10L,
+                        "owner@example.com",
+                        "target@example.com",
+                        DocumentPermission.PermissionLevel.READ));
+    }
+
+    @Test
+    void auditFailureDoesNotHidePermissionDenial() {
+        when(userRepository.findByEmail("target@example.com"))
+                .thenReturn(Optional.of(target));
+        when(documentRepository.findById(10L))
+                .thenReturn(Optional.of(document));
+        when(document.getOwner()).thenReturn(owner);
+        when(owner.getId()).thenReturn(1L);
+        when(target.getId()).thenReturn(2L);
+
+        org.mockito.Mockito.doThrow(
+                new RuntimeException("Audit database unavailable"))
+                .when(auditService)
+                .record(
+                        "target@example.com",
+                        "PERMISSION_GRANT",
+                        10L,
+                        "Permission grant denied",
+                        "DENIED");
+
+        assertThrows(
+                AccessDeniedException.class,
+                () -> permissionService.grantPermission(
+                        10L,
+                        "target@example.com",
+                        "owner@example.com",
+                        DocumentPermission.PermissionLevel.READ));
+    }
+
 }
