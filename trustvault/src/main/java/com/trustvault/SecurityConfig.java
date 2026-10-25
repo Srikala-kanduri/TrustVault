@@ -45,24 +45,31 @@ public class SecurityConfig {
         http
             .cors(Customizer.withDefaults())
             .authenticationProvider(authenticationProvider)
-            
-.authorizeHttpRequests(auth -> auth
-    .requestMatchers("/api/health", "/api/csrf", "/login")
-    .permitAll()
-    .requestMatchers("/api/admin/**").hasRole("ADMIN")
-    .anyRequest().authenticated()
-)
+            .authorizeHttpRequests(auth -> auth
+                .requestMatchers(
+                    "/",
+                    "/index.html",
+                    "/assets/**",
+                    "/favicon.ico",
+                    "/favicon.svg",
+                    "/api/health",
+                    "/api/csrf",
+                    "/login"
+                ).permitAll()
+                .requestMatchers("/api/admin/**").hasRole("ADMIN")
+                .anyRequest().authenticated()
+            )
 
             .exceptionHandling(exceptions -> exceptions
-    .authenticationEntryPoint((request, response, authException) -> {
-        response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
-        response.setContentType("application/json");
-        response.setCharacterEncoding("UTF-8");
-        response.getWriter().write(
-            "{\"message\":\"Authentication required\"}"
-        );
-    })
-)
+                .authenticationEntryPoint((request, response, authException) -> {
+                    response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+                    response.setContentType("application/json");
+                    response.setCharacterEncoding("UTF-8");
+                    response.getWriter().write(
+                        "{\"message\":\"Authentication required\"}"
+                    );
+                })
+            )
             .formLogin(form -> form
                 .successHandler((request, response, authentication) -> {
                     response.setStatus(HttpServletResponse.SC_OK);
