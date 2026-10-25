@@ -1,25 +1,46 @@
-# TrustVault
+﻿# TrustVault
 
-TrustVault is a secure document-sharing application. It provides per-document read/edit grants, private file storage, revocation, document search, and an HMAC-chained audit history.
+TrustVault is a secure document-sharing application with per-document permissions and an HMAC-chained audit trail.
 
-## Current implementation
+## Live demo
 
-- `ADMIN` can inspect the verified global audit trail. Every signed-in account can upload documents; the uploader owns and manages that document. Access to other people’s documents follows explicit per-document grants, so an employee can own some documents and view or edit others. Admin status does not grant implicit document access.
-- Every document read, download, update, replacement, deletion, grant, and revocation is authorized by the backend. Revocation is checked on each request, so later requests are denied immediately. A file already downloaded cannot be recalled.
-- Search supports title, category, owner email, and a date range, over only the caller's accessible documents.
-- Upload validation checks extension and file signature for PDF, PNG, and JPEG, with Spring multipart size limits (10 MB per file).
-- Audit events include successful operations and relevant denied attempts. The HMAC chain is verified before audit views are returned. The key must remain secret and stable.
-- Owner and viewer accounts appear in personal audit views, which contain only events recorded under the signed-in email.
+- Application: <https://trustvault-6vsk.onrender.com>
+- Repository: <https://github.com/Srikala-kanduri/TrustVault>
+- The Render free web service may sleep when idle. The first page load can take about a minute; wait for it to wake before retrying.
+- The application uses seeded `ADMIN`, `OWNER`, and `VIEWER` accounts. Give evaluators the email/password pairs for these demo accounts in the submission's private credential field. Do not use production or personal passwords. If the submission requires the credentials to be public in this README, first rotate the accounts to disposable evaluator-only passwords and replace the entries below. **Do not submit this README with the placeholders unchanged.**
 
-## Requirements not yet satisfied
+| Account | Email | Password |
+|---|---|---|
+| Admin | `admin@trustvault.com` | `REPLACE_WITH_DISPOSABLE_VERIFIER_PASSWORD` |
+| Owner | `owner@trustvault.com` | `REPLACE_WITH_DISPOSABLE_VERIFIER_PASSWORD` |
+| Viewer | `viewer@trustvault.com` | `REPLACE_WITH_DISPOSABLE_VERIFIER_PASSWORD` |
 
-This repository does not currently include a deployed live URL, a five-minute demo video, or a completed submission write-up. The GitHub remote is configured, but public accessibility could not be verified from this environment. The Render deployment configuration is in [render.yaml](render.yaml); see the deployment instructions below. See [THREATS.md](THREATS.md) for known risks and [PROMPTS.md](PROMPTS.md) for AI usage notes.
+The role labels identify the seeded demo accounts. All signed-in users can upload documents and manage the documents they upload. Owners can grant `READ` or `EDIT` access to another registered account. A user's access to documents uploaded by others comes only from an active grant. Admin can inspect the global audit trail, but admin status does not grant access to document contents. Every non-admin account sees only audit events attributed to its own email.
 
-## Run locally on Windows
+### Evaluator walkthrough
 
-Prerequisites: JDK 21+, Node.js/npm, and internet access the first time Maven downloads dependencies.
+1. Sign in as `owner@trustvault.com`, upload a small PDF or image, then open **Share a document** and grant `READ` to `viewer@trustvault.com`.
+2. Sign out and sign in as the viewer. Confirm the shared document is listed and can be opened/downloaded. Try an unshared document ID if available; the server should deny the request.
+3. Sign back in as the owner and revoke the grant. Subsequent viewer requests for that document should be denied. A previously downloaded copy cannot be recalled.
+4. Open **Audit trail** as the viewer and confirm it shows only viewer-attributed activity. Sign in as admin and confirm the global audit view includes events from all accounts.
+5. Try the protected API without a session (`GET /api/documents` should return `401`) and try the admin audit endpoint as a non-admin (should return `403`).
 
-Open PowerShell in the repository root. The following retrieves the same Windows user-level key each run and creates one only if none exists. It validates the existing key and stops without replacing it if it is malformed or too short. Passwords are read as secure strings and are not echoed. Do not commit these values.
+## Authorization and audit behavior
+
+- Authentication uses session cookies and BCrypt-encoded passwords. CSRF protection applies to state-changing requests.
+- Access is checked server-side on every document request. Listing and search return only documents the caller owns or has an active grant for.
+- Every signed-in user can upload; the uploader becomes the owner. Only that document's owner can grant or revoke access.
+- `READ` grants allow reading/downloading. `EDIT` grants also allow metadata/file updates. Neither grants deletion or grant-management rights.
+- Revocation blocks later server requests. It cannot recall bytes already downloaded or copied.
+- Admin can read the global audit trail. Other accounts can read only events whose actor matches their signed-in email. Audit views are returned only after HMAC-chain verification.
+
+See [API.md](trustvault/API.md) for endpoint methods, permissions, parameters, and CSRF steps. See [THREATS.md](THREATS.md) for defenses, limits, and accepted risks. See [PROMPTS.md](PROMPTS.md) for the AI-assisted development record.
+
+## Local development on Windows
+
+Prerequisites: JDK 21+, Node.js/npm, and internet access for the first Maven dependency download. Open PowerShell in the repository root.
+
+Set a persistent local audit key once per Windows user, or preserve your existing key. Never change it while using the same audit database. In PowerShell:
 
 ```powershell
 $key = [Environment]::GetEnvironmentVariable('TRUSTVAULT_AUDIT_HMAC_KEY', 'User')
@@ -29,49 +50,44 @@ if (-not $key) {
   $key = [Convert]::ToBase64String($bytes)
   [Environment]::SetEnvironmentVariable('TRUSTVAULT_AUDIT_HMAC_KEY', $key, 'User')
 }
-try {
-  $keyBytes = [Convert]::FromBase64String($key)
-} catch {
-  throw 'Saved TRUSTVAULT_AUDIT_HMAC_KEY is not valid Base64; it was not changed.'
-}
-if ($keyBytes.Length -lt 32) {
-  [Array]::Clear($keyBytes, 0, $keyBytes.Length)
-  throw 'Saved TRUSTVAULT_AUDIT_HMAC_KEY decodes to fewer than 32 bytes; it was not changed.'
-}
-[Array]::Clear($keyBytes, 0, $keyBytes.Length)
+try { $decoded = [Convert]::FromBase64String($key) }
+catch { throw 'Saved audit key is not valid Base64; it was not changed.' }
+if ($decoded.Length -lt 32) { throw 'Saved audit key is shorter than 32 bytes; it was not changed.' }
 $env:TRUSTVAULT_AUDIT_HMAC_KEY = $key
+$env:SPRING_PROFILES_ACTIVE = 'dev'
 $env:TRUSTVAULT_DEV_ADMIN_ENABLED = 'true'
 $env:TRUSTVAULT_DEV_OWNER_ENABLED = 'true'
 $env:TRUSTVAULT_DEV_VIEWER_ENABLED = 'true'
-function Set-TrustVaultSecretFromPrompt([string]$Name, [string]$Prompt) {
+```
+
+Set local role passwords in this same PowerShell session (12 or more characters):
+
+```powershell
+function Set-TrustVaultPassword([string]$Name, [string]$Prompt) {
   $secure = Read-Host $Prompt -AsSecureString
-  if ($secure.Length -lt 12) { throw "$Name must be at least 12 characters." }
+  if ($secure.Length -lt 12) { throw 'Passwords must be at least 12 characters.' }
   $pointer = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($secure)
   try {
-    $plain = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($pointer)
-    [Environment]::SetEnvironmentVariable($Name, $plain, 'Process')
+    [Environment]::SetEnvironmentVariable(
+      $Name, [Runtime.InteropServices.Marshal]::PtrToStringBSTR($pointer), 'Process')
   } finally {
     [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($pointer)
     $secure.Dispose()
-    Remove-Variable plain -ErrorAction SilentlyContinue
   }
 }
-Set-TrustVaultSecretFromPrompt 'TRUSTVAULT_DEV_ADMIN_PASSWORD' 'Local admin password (12+ characters)'
-Set-TrustVaultSecretFromPrompt 'TRUSTVAULT_DEV_OWNER_PASSWORD' 'Local owner password (12+ characters)'
-Set-TrustVaultSecretFromPrompt 'TRUSTVAULT_DEV_VIEWER_PASSWORD' 'Local viewer password (12+ characters)'
-$env:SPRING_PROFILES_ACTIVE = 'dev'
+Set-TrustVaultPassword 'TRUSTVAULT_DEV_ADMIN_PASSWORD' 'Local admin password'
+Set-TrustVaultPassword 'TRUSTVAULT_DEV_OWNER_PASSWORD' 'Local owner password'
+Set-TrustVaultPassword 'TRUSTVAULT_DEV_VIEWER_PASSWORD' 'Local viewer password'
 ```
 
-The audit key must stay unchanged when reopening the app against the same database. With the default in-memory H2 database, audit data is lost on restart.
-
-Start the backend in this terminal:
+The prompt masks typing; the password is briefly converted for the child process environment. Start the backend in one terminal:
 
 ```powershell
 cd .\trustvault
 .\mvnw.cmd spring-boot:run
 ```
 
-Start the frontend in a second PowerShell terminal from the repository root:
+Start the frontend in a second terminal from the repository root:
 
 ```powershell
 cd .\trustvault-frontend
@@ -79,37 +95,45 @@ npm install
 npm run dev
 ```
 
-Open the Vite URL, normally `http://localhost:5173`. Development accounts are `admin@trustvault.local`, `owner@trustvault.local`, and `viewer@trustvault.local`; use the passwords you entered above. Health check: `http://localhost:8080/api/health`.
+Open the Vite URL, normally <http://localhost:5173>. Local account emails default to `admin@trustvault.local`, `owner@trustvault.local`, and `viewer@trustvault.local`, with the passwords set above. The local default database is in-memory H2, so its data is lost when the backend stops. Health endpoint: <http://localhost:8080/api/health>.
 
-To run backend tests, open a terminal in `trustvault` and run:
+Run backend tests from `trustvault`:
 
 ```powershell
 .\mvnw.cmd clean test
 ```
 
-## Deploy on Render
+Build the frontend from `trustvault-frontend`:
 
-The root `render.yaml` creates a free Docker web service that connects to your Neon PostgreSQL database and private Neon Object Storage bucket. The frontend is bundled into the Spring Boot app and uses the same origin for API calls and session cookies. Before creating the Render Blueprint, create a private bucket and a Neon Object Storage credential on the same branch as the database, with `storage:read` and `storage:write` scopes. Enter the pooled PostgreSQL connection URI (including `sslmode=require`), bucket endpoint/name, credential ID/secret, and signing region when Render prompts for the secrets. The credential ID is `TRUSTVAULT_STORAGE_S3_ACCESS_KEY`; its secret is `TRUSTVAULT_STORAGE_S3_SECRET_KEY`. Neon’s current free plan includes 1 GB of database storage and 5 GB of object storage.
+```powershell
+npm run build
+```
 
-1. Push the repository to GitHub and create a new Blueprint in the Render dashboard from that repository.
-2. When Render prompts for `TRUSTVAULT_DATABASE_URL`, the five `TRUSTVAULT_STORAGE_S3_*` values, and the six role email/password values, enter the Neon values and unique role passwords of at least 12 characters. These are stored as Render secrets.
-3. Let the first deploy finish. The production bootstrap creates those three accounts only if the database contains no users. Later deploys skip account creation. Keep the Neon database and the generated `TRUSTVAULT_AUDIT_HMAC_KEY`; the key must remain unchanged for the life of the audit history.
-4. Open the service URL and sign in with the owner or viewer account. The admin account can view the global audit trail.
+## Render and Neon deployment
 
-The service uses the `prod` profile, initializes and validates the PostgreSQL schema, disables H2 and development accounts, and marks session cookies secure. Uploaded documents are stored in the private Neon bucket; the SQL database keeps document metadata, grants, users, and audit events. The initial schema is in `trustvault/src/main/resources/database/schema.sql`; future schema changes should be delivered as explicit migrations before updating Hibernate validation expectations. Render's free service spins down after 15 minutes without inbound traffic and takes about a minute to wake on the next request.
+The repository includes a Render Blueprint in [`render.yaml`](render.yaml). It builds the frontend into the Spring Boot app and serves UI and API on the same origin. Production uses PostgreSQL on Neon and private Neon Object Storage for uploaded file bytes. The database schema is in [`trustvault/src/main/resources/database/schema.sql`](trustvault/src/main/resources/database/schema.sql); the standalone PostgreSQL setup scripts are in [`database/`](database/).
 
-## Database and API
+The first production bootstrap is enabled by the Blueprint. Supply these Render environment variables using the Render dashboard's secret inputs:
 
-The default profile uses in-memory H2 and local file storage for development. `database/schema.sql` documents the PostgreSQL schema for a persistent installation; `database/setup.sql` applies it with `psql`. Production starts with `SPRING_PROFILES_ACTIVE=prod`, initializes and validates the PostgreSQL schema, disables H2 and development account initializers, and requires a PostgreSQL URL, private object storage configuration, and stable audit key. The first-run production bootstrap is separately gated and creates the three configured role accounts only when the user table is empty. Never enable development account initializers in production. The Render setup bundles the frontend and API on one origin; other deployments can set `VITE_API_BASE_URL` when building the frontend.
+- `TRUSTVAULT_DATABASE_URL`
+- `TRUSTVAULT_STORAGE_S3_ENDPOINT`, `TRUSTVAULT_STORAGE_S3_BUCKET`, `TRUSTVAULT_STORAGE_S3_ACCESS_KEY`, `TRUSTVAULT_STORAGE_S3_SECRET_KEY`, `TRUSTVAULT_STORAGE_S3_REGION`
+- `TRUSTVAULT_BOOTSTRAP_ADMIN_EMAIL`, `TRUSTVAULT_BOOTSTRAP_ADMIN_PASSWORD`
+- `TRUSTVAULT_BOOTSTRAP_OWNER_EMAIL`, `TRUSTVAULT_BOOTSTRAP_OWNER_PASSWORD`
+- `TRUSTVAULT_BOOTSTRAP_VIEWER_EMAIL`, `TRUSTVAULT_BOOTSTRAP_VIEWER_PASSWORD`
+- `TRUSTVAULT_AUDIT_HMAC_KEY` (generated by the Blueprint; preserve it)
 
-Endpoint methods, roles, request fields, and CSRF expectations are documented in [API.md](API.md). For session-authenticated state-changing requests, first obtain the CSRF token from `GET /api/csrf` and send the returned token in `X-XSRF-TOKEN` with the session cookie.
+Passwords must be at least 12 characters. The production bootstrap creates the three accounts only when the database has no users. It skips creation on later starts, so changing these environment variables does **not** change existing account passwords. To provision new verifier credentials, use a fresh demo database or a reviewed password-reset procedure; do not delete a database that contains submission data without a backup. Never put the database URI, storage secrets, or audit HMAC key in the repository or share them with evaluators.
 
-## Repository layout
+For submission, use disposable evaluator accounts and share their login pairs only where the submission instructions specify. If credentials are to be placed in this public README, rotate them first, ensure the accounts contain only synthetic demo data, then replace the three password placeholders above. Do not commit real operational credentials.
 
-- `trustvault/`: Spring Boot backend and automated tests.
-- `trustvault-frontend/`: React/Vite user interface.
-- `database/`: PostgreSQL schema and setup script.
-- `API.md`: endpoint reference.
-- `THREATS.md`: threat model and accepted limitations.
-- `PROMPTS.md`: AI-assisted development record.
-- `SUBMISSION_DRAFT.md`: honest draft answers for the challenge submission form.
+Post-deployment checks: open the live URL, sign in with each evaluator account, follow the evaluator walkthrough, and check the Render deploy log if an endpoint fails. A `401` means no valid session; `403` means the session is authenticated but lacks permission. The deployed in-process rate limiter allows up to 10 login requests and 120 API requests per client IP per minute; see [THREATS.md](THREATS.md) for its limits.
+
+## Repository map
+
+- `trustvault/`: Spring Boot backend, PostgreSQL schema, and tests.
+- `trustvault-frontend/`: React/Vite frontend.
+- `database/`: PostgreSQL schema and setup scripts.
+- `trustvault/API.md`: endpoint reference.
+- `THREATS.md`: threat model and limitations.
+- `PROMPTS.md`: AI usage log.
+- `SUBMISSION_DRAFT.md`: draft responses for the challenge submission.

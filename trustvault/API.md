@@ -1,48 +1,50 @@
-# TrustVault API
+﻿# TrustVault API Reference
 
-All `/api` endpoints except `GET /api/health` require a signed-in session. State-changing calls require the session's CSRF token in `X-XSRF-TOKEN`. Obtain it from `GET /api/csrf` and include the session cookie. Requests and responses use JSON unless noted. Access checks are performed by the backend on each request.
+The deployed UI and API share one origin. All `/api/**` endpoints except health and CSRF bootstrap require an authenticated session, unless a row below says otherwise. `POST`, `PUT`, `PATCH`, and `DELETE` requests require the session's CSRF token in `X-XSRF-TOKEN`; obtain the token from `GET /api/csrf` and retain the session/CSRF cookies. Responses use JSON unless noted. The backend checks access on every request.
 
 ## Authentication, health, and audit
 
-| Method and path | Access | Purpose |
+| Method and path | Access | Behavior |
 |---|---|---|
 | `GET /api/health` | Public | Liveness response. |
-| `GET /api/csrf` | Public/session bootstrap | Returns CSRF token and sets the CSRF cookie. |
-| `GET /api/me` | Any authenticated role | Current user and authorities. |
-| `GET /api/audit-logs` | Any authenticated role | Only events attributed to the caller's normalized email. |
-| `GET /api/admin/audit-logs` | `ADMIN` | Full audit history, only after chain integrity verifies. |
+| `GET /api/csrf` | Public/session bootstrap | Returns CSRF token and sets CSRF cookie. |
+| `POST /login` | Public + CSRF | Spring form login; form fields `username` (email) and `password`. Returns JSON; successful login establishes session. |
+| `POST /logout` | Authenticated + CSRF | Ends the session. |
+| `GET /api/me` | Any authenticated user | Returns current account information and authorities. |
+| `GET /api/audit-logs` | Any authenticated user | Returns only events attributed to the caller's normalized email, after verifying the HMAC chain. |
+| `GET /api/admin/audit-logs` | `ADMIN` | Returns the global audit history after verifying the HMAC chain. |
 
-Login uses Spring Security's form login endpoint (`POST /login`) with `username` (email) and `password`, plus CSRF. Logout uses `POST /logout` with CSRF.
+Authentication failures return `401`; authenticated callers without permission receive `403`. Missing resources return `404`; rate-limit responses return `429` with `Retry-After`.
 
 ## Documents
 
-| Method and path | Access | Purpose / parameters |
+All signed-in users may upload. The uploader becomes the owner regardless of the account's seeded role label. A user can access a document they do not own only through an active explicit grant.
+
+| Method and path | Access | Parameters / behavior |
 |---|---|---|
-| `GET /api/documents` | Authenticated | Documents owned by caller or explicitly granted to caller. |
-| `GET /api/documents/search` | Authenticated | Optional `title`, `category`, `ownerEmail`, `fromDate`, `toDate` (ISO-8601 timestamps); searches only accessible documents. |
-| `POST /api/documents` | `OWNER` | Multipart `title`, `category`, and `file`; creates document. Allowed file signatures: PDF, PNG, JPEG; max file 10 MB. Returns `201`. |
-| `GET /api/documents/{id}` | Owner or any explicit grant | Read metadata; records a read event. |
-| `GET /api/documents/{id}/download` | Owner or any explicit grant | Downloads bytes after current access check; records download. |
-| `PATCH /api/documents/{id}` | Owner or explicit `EDIT` grant | JSON `{ "title": "...", "category": "..." }`; title max 200, category max 100. |
-| `PUT /api/documents/{id}/file` | Owner or explicit `EDIT` grant | Multipart `file`; replaces stored file after validation. |
-| `DELETE /api/documents/{id}` | Owner only | Deletes document and grants; returns `204`. |
-| `GET /api/documents/{id}/my-permissions` | Owner or any explicit grant | Reports whether caller owns or can edit document. |
+| `GET /api/documents` | Authenticated | List documents owned by or actively shared with caller. |
+| `GET /api/documents/search` | Authenticated | Optional `title`, `category`, `ownerEmail`, `fromDate`, `toDate` (ISO-8601 timestamps). Searches only accessible documents. |
+| `POST /api/documents` | Authenticated | Multipart fields `title`, `category`, `file`; creates owned document, returns `201`. Supported file signatures: PDF, PNG, JPEG. Maximum 10 MB per file (11 MB request). |
+| `GET /api/documents/{id}` | Owner or any active grant | Read document metadata; records activity. |
+| `GET /api/documents/{id}/download` | Owner or any active grant | Downloads the bytes after a current access check; records activity. |
+| `PATCH /api/documents/{id}` | Owner or explicit `EDIT` grant | JSON `{ "title": "...", "category": "..." }`; title max 200 characters and category max 100. |
+| `PUT /api/documents/{id}/file` | Owner or explicit `EDIT` grant | Multipart field `file`; replaces stored bytes after validation. |
+| `DELETE /api/documents/{id}` | Owner only | Deletes the document and related grants; returns `204`. |
+| `GET /api/documents/{id}/my-permissions` | Owner or active grantee | Reports whether caller owns the document and whether caller can edit it. |
 
-Denied access returns `403`; missing resources return `404`; invalid request data is rejected. Exact error JSON is provided by Spring's exception handling.
+## Sharing and permissions
 
-## Permissions
+Only the document owner may manage its grants. The recipient email must match an existing account. A `READ` grant permits reading/downloading; `EDIT` also permits metadata/file updates. Neither permission allows deletion or further sharing.
 
-Only the document owner may manage grants. A target email must belong to an existing account. Permission levels are `READ` and `EDIT`.
-
-| Method and path | Access | Purpose / parameters |
+| Method and path | Access | Parameters / behavior |
 |---|---|---|
 | `GET /api/documents/{documentId}/permissions` | Document owner | Lists active grants. |
-| `POST /api/documents/{documentId}/permissions` | Document owner | JSON `{ "email": "viewer@example.com", "permissionLevel": "READ" }`; grant or update permission. |
-| `DELETE /api/documents/{documentId}/permissions?email=...` | Document owner | Revokes that user's grant; subsequent requests are checked against current grants. Returns `204`. |
-| `GET /api/permissions/my-grants` | Any authenticated role | Lists active grants received by caller. |
+| `POST /api/documents/{documentId}/permissions` | Document owner | JSON `{ "email": "user@example.com", "permissionLevel": "READ" }`; creates or updates a grant (`READ` or `EDIT`). |
+| `DELETE /api/documents/{documentId}/permissions?email=user%40example.com` | Document owner | Revokes the target account's grant; returns `204`. Later requests use the updated grant state. |
+| `GET /api/permissions/my-grants` | Any authenticated user | Lists active grants received by caller. |
 
-Successful and denied protected operations are audited where applicable. Each access decision is server-side; hiding a frontend action is not an authorization control.
+Successful and denied protected operations are audited where implemented. UI visibility is not an access control. Never use a document identifier as proof of authorization.
 
 ## Data and deployment
 
-PostgreSQL schema and initial setup are in `database/schema.sql` and `database/setup.sql`. Production uses the `prod` profile with Hibernate validation. Create the database and apply the schema first, then configure JDBC credentials, a private persistent `TRUSTVAULT_STORAGE_DIR`, a stable random `TRUSTVAULT_AUDIT_HMAC_KEY`, and `TRUSTVAULT_CORS_ALLOWED_ORIGIN`. Build the frontend with `VITE_API_BASE_URL`. The application currently has no production user-provisioning endpoint or CLI; create production accounts through a controlled, reviewed bootstrap procedure before exposing the service. Do not expose stored file paths or map the storage directory as static web content.
+PostgreSQL schema initialization is in `src/main/resources/database/schema.sql`; standalone setup files are in the repository `database/` directory. Production uses the `prod` Spring profile, PostgreSQL, private Neon Object Storage, and a stable `TRUSTVAULT_AUDIT_HMAC_KEY`. Render deployment instructions, account bootstrap variables, and verifier walkthrough are in the root [`README.md`](../README.md). Do not expose object storage paths or map private storage as static web content.
