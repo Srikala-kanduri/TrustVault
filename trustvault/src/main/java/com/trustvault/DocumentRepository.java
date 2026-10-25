@@ -59,4 +59,5 @@ public interface DocumentRepository extends JpaRepository<Document, Long> {
             @Param("ownerEmail") String ownerEmail,
             @Param("fromDate") Instant fromDate,
             @Param("toDate") Instant toDate);
+
 }
