@@ -6,6 +6,7 @@ export default function LoginPage({
   setPassword,
   handleLogin,
   isSubmitting,
+  isRestoringSession = false,
   backendStatus,
   loginMessage,
 }) {
@@ -59,8 +60,12 @@ export default function LoginPage({
             required
           />
 
-          <button type="submit" disabled={isSubmitting}>
-            {isSubmitting ? 'Signing in…' : 'Continue'}
+          <button type="submit" disabled={isSubmitting || isRestoringSession}>
+            {isRestoringSession
+              ? 'Checking session…'
+              : isSubmitting
+                ? 'Signing in…'
+                : 'Continue'}
           </button>
 
           <p className="connection-status" role="status">

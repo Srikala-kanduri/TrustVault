@@ -3,14 +3,19 @@ export const API = import.meta.env.VITE_API_BASE_URL
   || (import.meta.env.DEV ? 'http://localhost:8080' : '')
 
 export async function request(path, options = {}) {
+  const { suppressSessionExpired = false, ...fetchOptions } = options
   const response = await fetch(`${API}${path}`, {
     credentials: 'include',
-    ...options,
+    ...fetchOptions,
   })
 
   if (!response.ok) {
     const message = await response.text()
-    if (response.status === 401 && typeof window !== 'undefined') {
+    if (
+      response.status === 401 &&
+      !suppressSessionExpired &&
+      typeof window !== 'undefined'
+    ) {
       window.dispatchEvent(new Event('trustvault:session-expired'))
     }
     const error = new Error(message || `Request failed (${response.status})`)

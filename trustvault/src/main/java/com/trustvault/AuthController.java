@@ -1,6 +1,8 @@
 
 package com.trustvault;
 
+import java.util.List;
+
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -9,8 +11,16 @@ import org.springframework.web.bind.annotation.RestController;
 public class AuthController {
 
     @GetMapping("/api/me")
-    public String currentUser(Authentication authentication) {
-        return "Authenticated as: " + authentication.getName()
-                + " | Authorities: " + authentication.getAuthorities();
+    public CurrentUserResponse currentUser(Authentication authentication) {
+        return new CurrentUserResponse(
+                authentication.getName(),
+                authentication.getAuthorities().stream()
+                        .map(authority -> authority.getAuthority())
+                        .toList());
+    }
+
+    public record CurrentUserResponse(
+            String email,
+            List<String> authorities) {
     }
 }

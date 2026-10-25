@@ -74,6 +74,7 @@ function App() {
   const [password, setPassword] = useState('')
   const [loginMessage, setLoginMessage] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [isRestoringSession, setIsRestoringSession] = useState(true)
 
   const [activePage, setActivePage] = useState('documents')
   const [selectedDocument, setSelectedDocument] = useState(null)
@@ -113,6 +114,27 @@ const [sharesBusy, setSharesBusy] = useState(false)
 
   const normalizedEmail = email.trim().toLowerCase()
   const isAdmin = hasAdminRole(user)
+
+  useEffect(() => {
+    let cancelled = false
+
+    request('/api/me', { suppressSessionExpired: true })
+      .then((currentUser) => {
+        if (cancelled) return
+        setUser(currentUser)
+        setEmail(currentUser.email || '')
+      })
+      .catch(() => {
+        // No valid session is normal when a user first opens the login page.
+      })
+      .finally(() => {
+        if (!cancelled) setIsRestoringSession(false)
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   useEffect(() => {
     const documentId = new URLSearchParams(window.location.search)
@@ -226,6 +248,10 @@ const [sharesBusy, setSharesBusy] = useState(false)
     }
   }, [loadDocumentPermissions])
 
+  useEffect(() => {
+    if (user) loadDocuments()
+  }, [user, loadDocuments])
+
   // The LoginPage passes { email, password } to this callback.
  const handleLogin = async (event) => {
   event.preventDefault()
@@ -255,12 +281,11 @@ const [sharesBusy, setSharesBusy] = useState(false)
     const currentUser = await request('/api/me')
 
     setUser(currentUser)
-    setEmail(email.trim())
+    setEmail(currentUser.email || email.trim())
     setPassword('')
     setActivePage('documents')
     setLoginMessage('')
 
-    await loadDocuments()
   } catch (error) {
     console.error('Login error:', error)
     setLoginMessage(
@@ -1224,6 +1249,7 @@ case 'audit':
   setPassword={setPassword}
   handleLogin={handleLogin}
   isSubmitting={isSubmitting}
+  isRestoringSession={isRestoringSession}
   backendStatus={backendStatus}
   loginMessage={loginMessage}
 />
