@@ -42,14 +42,17 @@ public class DocumentDownloadService {
         }
 
         try {
-            Path path = storageService.resolve(document.getStorageKey());
-
-            if (!Files.isRegularFile(path) || !Files.isReadable(path)) {
-                throw new java.nio.file.NoSuchFileException(
-                        "Stored document is unavailable");
+            byte[] content;
+            if (storageService.isRemoteStorageEnabled()) {
+                content = storageService.read(document.getStorageKey());
+            } else {
+                Path path = storageService.resolve(document.getStorageKey());
+                if (!Files.isRegularFile(path) || !Files.isReadable(path)) {
+                    throw new java.nio.file.NoSuchFileException(
+                            "Stored document is unavailable");
+                }
+                content = Files.readAllBytes(path);
             }
-
-            byte[] content = Files.readAllBytes(path);
 
             auditService.recordSuccess(
                     email,

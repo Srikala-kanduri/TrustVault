@@ -2,7 +2,6 @@
 package com.trustvault;
 
 import java.io.IOException;
-import java.nio.file.Files;
 import java.util.Locale;
 
 import org.springframework.security.access.AccessDeniedException;
@@ -84,7 +83,7 @@ public class DocumentFileReplacementService {
             document.replaceFileMetadata(oldFilename, oldStorageKey);
 
             try {
-                Files.deleteIfExists(storageService.resolve(newStorageKey));
+                storageService.delete(newStorageKey);
             } catch (IOException | RuntimeException cleanupException) {
                 exception.addSuppressed(cleanupException);
             }
@@ -122,8 +121,7 @@ public class DocumentFileReplacementService {
                     @Override
                     public void afterCommit() {
                         try {
-                            Files.deleteIfExists(
-                                    storageService.resolve(oldStorageKey));
+                            storageService.delete(oldStorageKey);
                         } catch (IOException | RuntimeException cleanupException) {
                             try {
                                 auditService.record(
@@ -142,8 +140,7 @@ public class DocumentFileReplacementService {
                     public void afterCompletion(int status) {
                         if (status != STATUS_COMMITTED) {
                             try {
-                                Files.deleteIfExists(
-                                        storageService.resolve(newStorageKey));
+                                storageService.delete(newStorageKey);
                             } catch (IOException | RuntimeException ignored) {
                                 // Failed cleanup requires investigation.
                             }

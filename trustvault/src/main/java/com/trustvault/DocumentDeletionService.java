@@ -69,8 +69,8 @@ public class DocumentDeletionService {
 
         String storageKey = document.getStorageKey();
 
-        // Move the file out of its normal location before database deletion.
-        Path quarantined = storageService.quarantine(storageKey);
+        boolean remoteStorage = storageService.isRemoteStorageEnabled();
+        Path quarantined = remoteStorage ? null : storageService.quarantine(storageKey);
 
         try {
             permissionRepository.deleteByDocument_Id(documentId);
@@ -85,16 +85,22 @@ public class DocumentDeletionService {
                     "SUCCESS");
 
         } catch (RuntimeException | Error exception) {
-    restoreAfterFailure(storageKey, quarantined, exception);
-    throw exception;
-}
+            if (!remoteStorage) {
+                restoreAfterFailure(storageKey, quarantined, exception);
+            }
+            throw exception;
+        }
 
         TransactionSynchronizationManager.registerSynchronization(
                 new TransactionSynchronization() {
                     @Override
 public void afterCommit() {
     try {
-        Files.deleteIfExists(quarantined);
+        if (remoteStorage) {
+            storageService.delete(storageKey);
+        } else {
+            Files.deleteIfExists(quarantined);
+        }
     } catch (IOException cleanupException) {
         try {
             auditService.record(
@@ -112,7 +118,7 @@ public void afterCommit() {
 
                     @Override
                     public void afterCompletion(int status) {
-                        if (status == STATUS_ROLLED_BACK) {
+                        if (!remoteStorage && status == STATUS_ROLLED_BACK) {
                             try {
                                 storageService.restore(storageKey, quarantined);
                             } catch (IOException | RuntimeException ignored) {

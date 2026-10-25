@@ -2,8 +2,6 @@
 package com.trustvault;
 
 import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.util.Locale;
 
 import org.springframework.security.access.AccessDeniedException;
@@ -133,8 +131,7 @@ public class DocumentUploadService {
             String storageKey,
             RuntimeException originalException) {
         try {
-            Path storedPath = storageService.resolve(storageKey);
-            Files.deleteIfExists(storedPath);
+            storageService.delete(storageKey);
         } catch (IOException | RuntimeException cleanupException) {
             originalException.addSuppressed(cleanupException);
         }
