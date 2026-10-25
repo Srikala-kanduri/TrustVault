@@ -118,7 +118,10 @@ public class AuditService {
         headRepository.saveAndFlush(head);
     }
 
-    @Transactional(readOnly = true)
+    // verifyIntegrity takes a PESSIMISTIC_READ lock on the chain head.
+    // Keep this as a read-write transaction because PostgreSQL rejects
+    // row-locking SELECTs in a read-only transaction.
+    @Transactional
     public IntegrityResult verifyIntegrity() {
         AuditChainHead head = headRepository
                 .lockForRead(AuditChainHead.SINGLETON_ID)
