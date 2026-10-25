@@ -52,31 +52,6 @@ function hasAdminRole(currentUser) {
   )
 }
 
-function hasOwnerRole(currentUser) {
-  if (!currentUser) return false
-
-  const roleValues = []
-
-  if (typeof currentUser === 'string') {
-    roleValues.push(currentUser)
-  } else if (typeof currentUser === 'object') {
-    roleValues.push(
-      currentUser.role,
-      currentUser.authorities,
-      currentUser.roles,
-      currentUser.authority,
-    )
-  }
-
-  const rolesText = roleValues
-    .flat(Infinity)
-    .filter(Boolean)
-    .join(' ')
-    .toUpperCase()
-
-  return rolesText.includes('ROLE_OWNER') || /\bOWNER\b/.test(rolesText)
-}
-
 function App() {
   const [backendStatus, setBackendStatus] = useState(
     'Checking backend...',
@@ -125,7 +100,6 @@ const [sharesBusy, setSharesBusy] = useState(false)
 
   const normalizedEmail = email.trim().toLowerCase()
   const isAdmin = hasAdminRole(user)
-  const isOwner = hasOwnerRole(user)
 
   // Check whether the existing backend health endpoint is reachable.
   useEffect(() => {
@@ -1034,15 +1008,6 @@ const loadExistingShares = useCallback(async () => {
         )
 
       case 'upload':
-        if (!isOwner) {
-          return (
-            <AccessDeniedPage
-              message="Only document owners can upload documents."
-              goBack={() => setActivePage('documents')}
-              goToDocuments={() => setActivePage('documents')}
-            />
-          )
-        }
         return (
           <UploadPage
             title={title}
@@ -1183,7 +1148,6 @@ case 'audit':
   currentUser={user}
   email={email}
   isAdmin={isAdmin}
-  canUpload={isOwner}
   onLogout={logout}
   busy={isSubmitting}
 />

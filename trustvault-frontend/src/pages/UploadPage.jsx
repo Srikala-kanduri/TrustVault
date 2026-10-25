@@ -74,6 +74,7 @@ export default function UploadPage({
               onChange={(event) => setCategory(event.target.value)}
               placeholder="e.g. Work, Finance, Personal"
               maxLength={80}
+              required
             />
           </div>
 

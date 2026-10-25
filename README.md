@@ -4,7 +4,7 @@ TrustVault is a secure document-sharing application. It provides per-document re
 
 ## Current implementation
 
-- Roles: `ADMIN` can inspect the verified global audit trail; `OWNER` can upload and manage documents they own; `VIEWER` can read or edit only documents with an explicit grant for the relevant permission. Admin status does not grant implicit document access.
+- `ADMIN` can inspect the verified global audit trail. Every signed-in account can upload documents; the uploader owns and manages that document. Access to other people’s documents follows explicit per-document grants, so an employee can own some documents and view or edit others. Admin status does not grant implicit document access.
 - Every document read, download, update, replacement, deletion, grant, and revocation is authorized by the backend. Revocation is checked on each request, so later requests are denied immediately. A file already downloaded cannot be recalled.
 - Search supports title, category, owner email, and a date range, over only the caller's accessible documents.
 - Upload validation checks extension and file signature for PDF, PNG, and JPEG, with Spring multipart size limits (10 MB per file).

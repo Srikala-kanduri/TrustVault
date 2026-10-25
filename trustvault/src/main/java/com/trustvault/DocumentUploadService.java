@@ -41,10 +41,10 @@ public class DocumentUploadService {
         String actor = normalizeEmail(authenticatedEmail);
 
         AppUser owner = userRepository.findByEmail(actor).orElse(null);
-        if (owner == null || owner.getRole() != UserRole.OWNER) {
+        if (owner == null) {
             recordDeniedSafely(actor);
             throw new AccessDeniedException(
-                    "Only document owners can upload documents");
+                    "The authenticated account could not be found");
         }
 
         String storageKey = null;
@@ -151,7 +151,7 @@ public class DocumentUploadService {
                     actor,
                     "DOCUMENT_UPLOAD",
                     null,
-                    "Upload denied: only document owners may upload");
+                    "Upload denied: authenticated account could not be found");
         } catch (RuntimeException ignored) {
             // Preserve the original authorization failure.
         }

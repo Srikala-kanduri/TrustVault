@@ -8,7 +8,6 @@ const navigationItems = [
   },
   {
     id: 'upload',
-    ownerOnly: true,
     label: 'Upload document',
     description: 'Add a new document',
     icon: '↑',
@@ -40,7 +39,6 @@ export default function Sidebar({
   currentUser = null,
   email = '',
   isAdmin = false,
-  canUpload = false,
   onLogout,
   busy = false,
 }) {
@@ -51,7 +49,7 @@ export default function Sidebar({
     'Signed-in user'
 
   const visibleItems = navigationItems.filter(
-    (item) => (!item.adminOnly || isAdmin) && (!item.ownerOnly || canUpload),
+    (item) => !item.adminOnly || isAdmin,
   )
 
   function navigateTo(page) {
