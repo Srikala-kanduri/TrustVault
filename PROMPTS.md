@@ -371,7 +371,7 @@ The project still requires production deployment, persistent production storage,
 **Date:** 25 October 2026
 **Tools:** ChatGPT, Spring Boot, Maven Wrapper, React/Vite
 
-These are concrete corrections made in the current working tree. They are not committed yet, so they do not have honest commit URLs. The historical links identify the closest earlier feature commits, not commits for these latest corrections; replace them with exact links after committing.
+These corrections are in [commit 7b86b11](https://github.com/Srikala-kanduri/TrustVault/commit/7b86b11). The commit is local for now; push it before relying on the GitHub links.
 
 ### Personal audit feed returned 404
 
@@ -379,7 +379,7 @@ These are concrete corrections made in the current working tree. They are not co
 - **AI result:** The UI requested `/api/audit-logs`, but the route was missing from the running backend version.
 - **What was wrong:** UI and backend were out of sync, and there was no integration test proving owner/viewer personal-feed behavior.
 - **Correction:** Added a personal feed filtered by normalized actor email, plus owner/viewer isolation and unauthenticated-access integration tests.
-- **Related history:** [3aba0e4](https://github.com/Srikala-kanduri/TrustVault/commit/3aba0e4); the route and tests are uncommitted.
+- **Fix commit:** [7b86b11](https://github.com/Srikala-kanduri/TrustVault/commit/7b86b11) adds the personal audit route and owner/viewer isolation tests.
 
 ### Denied document deletion was not consistently audited
 
@@ -387,7 +387,7 @@ These are concrete corrections made in the current working tree. They are not co
 - **AI result:** The owner-only deletion branch recorded a denial, but `requireReadAccess` could throw first when the caller lacked read access.
 - **What was wrong:** That denied path produced no denial event.
 - **Correction:** Safely record the denied deletion when read authorization throws, then rethrow; added a regression test checking the audit and unchanged document/file state.
-- **Related history:** [4e0301c](https://github.com/Srikala-kanduri/TrustVault/commit/4e0301c); this edge-case fix is uncommitted.
+- **Fix commit:** [7b86b11](https://github.com/Srikala-kanduri/TrustVault/commit/7b86b11) records the early read-authorization denial and adds the regression test.
 
 ### Upload role was enforced only by the interface
 
@@ -395,7 +395,7 @@ These are concrete corrections made in the current working tree. They are not co
 - **AI result:** The UI hid upload for non-owners, but the upload service accepted any authenticated account.
 - **What was wrong:** A direct API request could bypass the hidden button.
 - **Correction:** The service now permits upload only for an `OWNER`, audits the denial, and tests that viewers cannot upload. Sidebar navigation uses the same role check.
-- **Related history:** [901f1fe](https://github.com/Srikala-kanduri/TrustVault/commit/901f1fe); this role restriction is uncommitted.
+- **Fix commit:** [7b86b11](https://github.com/Srikala-kanduri/TrustVault/commit/7b86b11) enforces OWNER in the service and tests viewer denial.
 
 ### Download assertion had become stale
 
@@ -403,7 +403,7 @@ These are concrete corrections made in the current working tree. They are not co
 - **AI result:** The failing test expected the old generic download audit details.
 - **What was wrong:** Current audit details include document title and original filename, but the test fixture did not set a title.
 - **Correction:** Set the title and assert the actual event. That run had 81 tests; the latest clean suite, expanded with audit tamper cases, passed 86.
-- **Related history:** [4e0301c](https://github.com/Srikala-kanduri/TrustVault/commit/4e0301c); fixture correction is uncommitted.
+- **Fix commit:** [7b86b11](https://github.com/Srikala-kanduri/TrustVault/commit/7b86b11) corrects the fixture and audit assertion.
 
 ### Windows Maven wrapper failed before tests
 
@@ -411,7 +411,7 @@ These are concrete corrections made in the current working tree. They are not co
 - **AI result:** The wrapper failed in PowerShell with “Cannot index into a null array” while reading a normal `.m2` directory.
 - **What was wrong:** The wrapper assumed `Get-Item(...).Target[0]` exists for every directory.
 - **Correction:** Check link type and target safely before resolving the Maven cache. Tests then ran successfully.
-- **Related history:** [f972743](https://github.com/Srikala-kanduri/TrustVault/commit/f972743); wrapper fix is uncommitted.
+- **Fix commit:** [7b86b11](https://github.com/Srikala-kanduri/TrustVault/commit/7b86b11) fixes null `Target` handling in the wrapper.
 
 ## Remaining Work
 
@@ -422,8 +422,8 @@ The following items must be checked against the final submission:
 - [x] Document API endpoints, authentication requirements, and role-based permissions in `trustvault/API.md`.
 - [ ] Configure and test persistent production database and private file storage.
 - [ ] Verify the deployed application and its environment configuration.
-- [ ] Assess and document audit-log tamper resistance.
+- [x] Document and test detection of audit-field changes, deletion, reordering, truncation, chain-head edits, and rejection of tampered startup history. External anchoring remains unimplemented.
 - [ ] Prepare the required five-minute demonstration video.
 - [ ] Prepare the final project write-up, including completed features, unfinished work, commands, AI usage, and errors encountered.
-- [ ] Commit the final uncommitted fixes and link those commits here before submission. The working-tree changes are not represented by the historical links above.
+- [x] Commit the reviewed code and documentation as [7b86b11](https://github.com/Srikala-kanduri/TrustVault/commit/7b86b11). Push it before submission so the links resolve publicly.
 - [x] Latest clean backend suite: 86 tests passed on 25 October 2026; frontend production build passed on 25 October 2026.

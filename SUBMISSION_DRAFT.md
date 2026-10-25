@@ -20,7 +20,7 @@ Local login supports ADMIN, OWNER, and VIEWER accounts. Owners upload and manage
 
 ## 3. How can the evaluator run it?
 
-Use the PowerShell setup and exact commands in [README.md](README.md). It creates a stable local HMAC key in the Windows user environment on first use, prompts for local role passwords, starts the backend with the `dev` profile, and starts Vite in a second terminal. Backend tests run with `cmd.exe /c mvnw.cmd test` from `trustvault`.
+Use the PowerShell setup and exact commands in [README.md](README.md). It creates and validates a stable local HMAC key in the Windows user environment, prompts for masked local role passwords, enables all three development initializers under the `dev` profile, starts the backend, and starts Vite in a second terminal. Backend tests run with `.\mvnw.cmd clean test` from `trustvault`.
 
 ## 4. Which AI tools were used?
 
@@ -28,7 +28,7 @@ ChatGPT was used for implementation suggestions, UI changes, security review, de
 
 ## 5. What did AI get wrong, and what was corrected?
 
-During review, the audit UI/backend route was out of sync and returned 404; denied deletion could skip audit when read authorization threw first; upload authorization existed in the interface but not in the service; a download test expected obsolete audit details; and the Windows Maven wrapper indexed a missing `.m2` link target. These were corrected in the working tree with a personal-audit integration test, deletion denial audit test, OWNER-only service check, corrected download fixture, and safe wrapper link detection. Those latest fixes are not committed yet; commit them and add their exact commit URLs before submission.
+During review, the audit UI/backend route was out of sync and returned 404; denied deletion could skip audit when read authorization threw first; upload authorization existed in the interface but not in the service; a download test expected obsolete audit details; and the Windows Maven wrapper indexed a missing `.m2` link target. These were corrected with a personal-audit integration test, deletion denial audit test, OWNER-only service check, corrected download fixture, and safe wrapper link detection. The fixes are in [commit 7b86b11](https://github.com/Srikala-kanduri/TrustVault/commit/7b86b11); push the local commit before submitting this link.
 
 ## 6. What is unfinished?
 
