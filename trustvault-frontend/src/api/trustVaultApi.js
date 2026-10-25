@@ -10,6 +10,9 @@ export async function request(path, options = {}) {
 
   if (!response.ok) {
     const message = await response.text()
+    if (response.status === 401 && typeof window !== 'undefined') {
+      window.dispatchEvent(new Event('trustvault:session-expired'))
+    }
     throw new Error(message || `Request failed (${response.status})`)
   }
 

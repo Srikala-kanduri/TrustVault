@@ -101,6 +101,28 @@ const [sharesBusy, setSharesBusy] = useState(false)
   const normalizedEmail = email.trim().toLowerCase()
   const isAdmin = hasAdminRole(user)
 
+  useEffect(() => {
+    function handleSessionExpired() {
+      setUser(null)
+      setEmail('')
+      setPassword('')
+      setDocuments([])
+      setDocumentPermissions({})
+      setAuditLogs([])
+      setShowAudit(false)
+      setSelectedDocument(null)
+      setActivePage('documents')
+      setMessage('')
+      setBusy(false)
+      setLoginMessage('Your session expired. Please sign in again.')
+    }
+
+    window.addEventListener('trustvault:session-expired', handleSessionExpired)
+    return () => {
+      window.removeEventListener('trustvault:session-expired', handleSessionExpired)
+    }
+  }, [])
+
   // Check whether the existing backend health endpoint is reachable.
   useEffect(() => {
     let cancelled = false
