@@ -7,7 +7,6 @@ export default function LoginPage({
   handleLogin,
   isSubmitting,
   isRestoringSession = false,
-  backendStatus,
   loginMessage,
 }) {
   return (
@@ -67,10 +66,6 @@ export default function LoginPage({
                 ? 'Signing in…'
                 : 'Continue'}
           </button>
-
-          <p className="connection-status" role="status">
-            {backendStatus}
-          </p>
 
           {loginMessage && (
             <p className="login-message" role="status">

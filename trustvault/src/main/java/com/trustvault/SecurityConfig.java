@@ -13,6 +13,7 @@ import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
@@ -39,7 +40,11 @@ public class SecurityConfig {
     @Bean
     public SecurityFilterChain securityFilterChain(
             HttpSecurity http,
-            AuthenticationProvider authenticationProvider)
+            AuthenticationProvider authenticationProvider,
+            @Value("${trustvault.security.rate-limit.api-per-minute:120}")
+            int apiRequestsPerMinute,
+            @Value("${trustvault.security.rate-limit.login-per-minute:10}")
+            int loginRequestsPerMinute)
             throws Exception {
 
         http
@@ -59,6 +64,11 @@ public class SecurityConfig {
                 .requestMatchers("/api/admin/**").hasRole("ADMIN")
                 .anyRequest().authenticated()
             )
+            .addFilterBefore(
+                    new RequestRateLimitFilter(
+                            apiRequestsPerMinute,
+                            loginRequestsPerMinute),
+                    UsernamePasswordAuthenticationFilter.class)
 
             .exceptionHandling(exceptions -> exceptions
                 .authenticationEntryPoint((request, response, authException) -> {

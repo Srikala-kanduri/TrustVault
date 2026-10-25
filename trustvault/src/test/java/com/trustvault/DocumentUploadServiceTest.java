@@ -48,7 +48,6 @@ class DocumentUploadServiceTest {
     void uploadRejectsBlankTitle() throws IOException {
         when(userRepository.findByEmail("owner@example.com"))
                 .thenReturn(Optional.of(owner));
-        when(owner.getRole()).thenReturn(UserRole.OWNER);
         MultipartFile file = new MockMultipartFile(
                 "file", "report.pdf", "application/pdf",
                 "%PDF-1.7 test".getBytes());
@@ -66,7 +65,6 @@ class DocumentUploadServiceTest {
     void uploadRejectsEmptyFile() throws IOException {
         when(userRepository.findByEmail("owner@example.com"))
                 .thenReturn(Optional.of(owner));
-        when(owner.getRole()).thenReturn(UserRole.OWNER);
         MultipartFile file = new MockMultipartFile(
                 "file", "empty.pdf", "application/pdf", new byte[0]);
 
@@ -99,38 +97,48 @@ class DocumentUploadServiceTest {
                 "missing@example.com",
                 "DOCUMENT_UPLOAD",
                 null,
-                "Upload denied: only document owners may upload");
+                "Upload denied: authenticated account could not be found");
     }
 
     @Test
-    void viewerCannotUploadDocument() throws IOException {
+    void viewerCanUploadDocument() throws IOException {
         MultipartFile file = new MockMultipartFile(
                 "file", "report.pdf", "application/pdf",
                 "%PDF-1.7 test".getBytes());
-        AppUser viewer = org.mockito.Mockito.mock(AppUser.class);
+        AppUser viewer = new AppUser(
+                "viewer@example.com", "test-password", UserRole.VIEWER);
         when(userRepository.findByEmail("viewer@example.com"))
                 .thenReturn(Optional.of(viewer));
-        when(viewer.getRole()).thenReturn(UserRole.VIEWER);
+        when(storageService.store(file)).thenReturn(
+                "123e4567-e89b-12d3-a456-426614174001");
+        Document document = new Document(
+                "Report",
+                "report.pdf",
+                "Finance",
+                "123e4567-e89b-12d3-a456-426614174001",
+                viewer);
+        when(documentRepository.saveAndFlush(any(Document.class)))
+                .thenReturn(document);
 
-        assertThrows(
-                AccessDeniedException.class,
-                () -> uploadService.upload(
-                        "viewer@example.com", "Report", "Finance", file));
+        DocumentResponse response = uploadService.upload(
+                "viewer@example.com", "Report", "Finance", file);
 
-        verify(auditService).recordDenied(
+        assertEquals("viewer@example.com", response.ownerEmail());
+        verify(fileValidator).validate(file);
+        verify(storageService).store(file);
+        verify(documentRepository).saveAndFlush(any(Document.class));
+        verify(auditService).recordInCurrentTransaction(
                 "viewer@example.com",
                 "DOCUMENT_UPLOAD",
                 null,
-                "Upload denied: only document owners may upload");
-        verify(fileValidator, never()).validate(file);
-        verify(storageService, never()).store(any());
+                "Document uploaded: Report (report.pdf)",
+                "SUCCESS");
     }
 
     @Test
     void uploadNormalizesOwnerEmailAndRecordsSuccess() throws IOException {
         when(userRepository.findByEmail("owner@example.com"))
                 .thenReturn(Optional.of(owner));
-        when(owner.getRole()).thenReturn(UserRole.OWNER);
         MultipartFile file = new MockMultipartFile(
                 "file", "report.pdf", "application/pdf",
                 "%PDF-1.7 test".getBytes());

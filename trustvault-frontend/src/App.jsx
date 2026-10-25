@@ -65,10 +65,6 @@ function setDocumentIdInUrl(documentId, replace = false) {
 }
 
 function App() {
-  const [backendStatus, setBackendStatus] = useState(
-    'Checking backend...',
-  )
-
   const [user, setUser] = useState(null)
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -184,34 +180,6 @@ const [sharesBusy, setSharesBusy] = useState(false)
       window.removeEventListener('trustvault:session-expired', handleSessionExpired)
     }
   }, [])
-
-  // Check whether the existing backend health endpoint is reachable.
-  useEffect(() => {
-    let cancelled = false
-
-    fetch(`${API}/api/health`)
-      .then((response) => {
-        if (!response.ok) {
-          throw new Error('Backend unavailable')
-        }
-
-        if (!cancelled) {
-          setBackendStatus('Backend connected')
-        }
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setBackendStatus('Backend unavailable')
-        }
-      })
-
-    return () => {
-      cancelled = true
-    }
-  }, [])
-
-
-
 
   // Retrieve the current user's permissions for each accessible document.
   const loadDocumentPermissions = useCallback(async (documentList) => {
@@ -1250,7 +1218,6 @@ case 'audit':
   handleLogin={handleLogin}
   isSubmitting={isSubmitting}
   isRestoringSession={isRestoringSession}
-  backendStatus={backendStatus}
   loginMessage={loginMessage}
 />
     )

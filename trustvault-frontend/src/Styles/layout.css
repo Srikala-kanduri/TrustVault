@@ -167,7 +167,7 @@
 .login-form label { margin: 5px 0 2px; }
 .login-form input { width: 100%; min-width: 0; min-height: 44px; padding: 11px 13px; border: 1px solid var(--tv-border); border-radius: 7px; background: var(--tv-white); color: var(--tv-forest); }
 .login-form button { width: 100%; min-height: 46px; margin-top: 10px; }
-.login-form .connection-status, .login-form .login-message { margin: 2px 0 0; font-size: 12px; line-height: 1.5; text-align: center; overflow-wrap: anywhere; }
+.login-form .login-message { margin: 2px 0 0; font-size: 12px; line-height: 1.5; text-align: center; overflow-wrap: anywhere; }
 
 @media (min-width: 721px) and (max-height: 760px) {
   .login-hero { padding-block: 24px; gap: 14px; }

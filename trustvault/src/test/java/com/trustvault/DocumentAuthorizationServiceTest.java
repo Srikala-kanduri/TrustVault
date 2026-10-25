@@ -8,6 +8,8 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.access.AccessDeniedException;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.TypedQuery;
 import java.util.List;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import java.util.Optional;
@@ -15,6 +17,9 @@ import java.time.Instant;
 
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -28,6 +33,12 @@ class DocumentAuthorizationServiceTest {
 
     @Mock
     private AppUserRepository userRepository;
+
+    @Mock
+    private EntityManager entityManager;
+
+    @Mock
+    private TypedQuery<Document> documentQuery;
 
     @Mock
     private AppUser owner;
@@ -207,9 +218,11 @@ void viewerCannotListDocumentWithoutPermission() {
 void searchReturnsDocumentWhenUserHasReadPermission() {
     setUpViewerDocument();
 
-    when(documentRepository.searchAccessibleDocuments(
-            2L, "report", "Finance", null, null, null))
-            .thenReturn(List.of(document));
+    when(entityManager.createQuery(anyString(), eq(Document.class)))
+            .thenReturn(documentQuery);
+    when(documentQuery.setParameter(anyString(), any()))
+            .thenReturn(documentQuery);
+    when(documentQuery.getResultList()).thenReturn(List.of(document));
     when(document.getId()).thenReturn(10L);
     when(permissionRepository.findByDocument_IdAndUser_Id(10L, 2L))
             .thenReturn(Optional.of(permission));
@@ -233,9 +246,11 @@ void searchReturnsDocumentWhenUserHasReadPermission() {
 void searchExcludesDocumentWithoutPermission() {
     setUpViewerDocument();
 
-    when(documentRepository.searchAccessibleDocuments(
-            2L, null, null, null, null, null))
-            .thenReturn(List.of(document));
+    when(entityManager.createQuery(anyString(), eq(Document.class)))
+            .thenReturn(documentQuery);
+    when(documentQuery.setParameter(anyString(), any()))
+            .thenReturn(documentQuery);
+    when(documentQuery.getResultList()).thenReturn(List.of(document));
     when(document.getId()).thenReturn(10L);
     when(permissionRepository.findByDocument_IdAndUser_Id(10L, 2L))
             .thenReturn(Optional.empty());
