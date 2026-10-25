@@ -52,6 +52,18 @@ function hasAdminRole(currentUser) {
   )
 }
 
+function setDocumentIdInUrl(documentId, replace = false) {
+  const url = new URL(window.location.href)
+  if (documentId == null || documentId === '') {
+    url.searchParams.delete('documentId')
+  } else {
+    url.searchParams.set('documentId', String(documentId))
+  }
+
+  const method = replace ? 'replaceState' : 'pushState'
+  window.history[method]({}, '', `${url.pathname}${url.search}${url.hash}`)
+}
+
 function App() {
   const [backendStatus, setBackendStatus] = useState(
     'Checking backend...',
@@ -65,6 +77,7 @@ function App() {
 
   const [activePage, setActivePage] = useState('documents')
   const [selectedDocument, setSelectedDocument] = useState(null)
+  const [documentAccessError, setDocumentAccessError] = useState('')
 
   const [documents, setDocuments] = useState([])
   const [documentPermissions, setDocumentPermissions] = useState({})
@@ -102,6 +115,32 @@ const [sharesBusy, setSharesBusy] = useState(false)
   const isAdmin = hasAdminRole(user)
 
   useEffect(() => {
+    const documentId = new URLSearchParams(window.location.search)
+      .get('documentId')
+    if (user && documentId) {
+      openDocumentById(documentId)
+    }
+  }, [user])
+
+  useEffect(() => {
+    function handleBrowserNavigation() {
+      const documentId = new URLSearchParams(window.location.search)
+        .get('documentId')
+      if (documentId) {
+        if (user) openDocumentById(documentId)
+        return
+      }
+
+      setSelectedDocument(null)
+      setDocumentAccessError('')
+      if (activePage === 'details') setActivePage('documents')
+    }
+
+    window.addEventListener('popstate', handleBrowserNavigation)
+    return () => window.removeEventListener('popstate', handleBrowserNavigation)
+  }, [user, activePage])
+
+  useEffect(() => {
     function handleSessionExpired() {
       setUser(null)
       setEmail('')
@@ -111,6 +150,7 @@ const [sharesBusy, setSharesBusy] = useState(false)
       setAuditLogs([])
       setShowAudit(false)
       setSelectedDocument(null)
+      setDocumentAccessError('')
       setActivePage('documents')
       setMessage('')
       setBusy(false)
@@ -375,21 +415,49 @@ const [sharesBusy, setSharesBusy] = useState(false)
     }
   }
 
-  async function viewDocument(doc) {
-    if (busy) return
-
+  async function openDocumentById(documentId, { updateUrl = false } = {}) {
+    if (updateUrl) setDocumentIdInUrl(documentId)
     setBusy(true)
     setMessage('')
+    setDocumentAccessError('')
 
     try {
-      const documentDetails = await request(`/api/documents/${doc.id}`)
+      const endpoint = `/api/documents/${encodeURIComponent(documentId)}`
+      const [documentDetails, permissions] = await Promise.all([
+        request(endpoint),
+        request(`${endpoint}/my-permissions`),
+      ])
       setSelectedDocument(documentDetails)
+      setDocumentPermissions((current) => ({
+        ...current,
+        [documentDetails.id]: permissions,
+      }))
       setActivePage('details')
     } catch (error) {
-      setMessage(`Could not open document: ${error.message}`)
+      setSelectedDocument(null)
+      setDocumentAccessError(
+        error.status === 403 || error.status === 404
+          ? 'You do not have permission to view this document, or it does not exist.'
+          : error.status === 400
+            ? 'The document link is invalid.'
+            : `Could not open document: ${error.message}`,
+      )
+      setActivePage('details')
     } finally {
       setBusy(false)
     }
+  }
+
+  function viewDocument(doc) {
+    if (busy) return
+    return openDocumentById(doc.id, { updateUrl: true })
+  }
+
+  function closeDocumentDetails() {
+    setDocumentIdInUrl(null)
+    setSelectedDocument(null)
+    setDocumentAccessError('')
+    setActivePage('documents')
   }
 
   function startEditing(doc) {
@@ -481,8 +549,7 @@ const [sharesBusy, setSharesBusy] = useState(false)
       setMessage('Document deleted.')
 
       if (selectedDocument?.id === doc.id) {
-        setSelectedDocument(null)
-        setActivePage('documents')
+        closeDocumentDetails()
       }
 
       if (editingDocument?.id === doc.id) {
@@ -545,6 +612,8 @@ const [sharesBusy, setSharesBusy] = useState(false)
       setAuditLogs([])
       setShowAudit(false)
       setSelectedDocument(null)
+      setDocumentAccessError('')
+      setDocumentIdInUrl(null)
 
       setTitle('')
       setCategory('')
@@ -1064,6 +1133,15 @@ const loadExistingShares = useCallback(async () => {
         )
 
       case 'details':
+        if (documentAccessError) {
+          return (
+            <AccessDeniedPage
+              message={documentAccessError}
+              goBack={closeDocumentDetails}
+              goToDocuments={closeDocumentDetails}
+            />
+          )
+        }
         return (
           <DocumentDetailsPage
             document={selectedDocument}
@@ -1076,7 +1154,7 @@ const loadExistingShares = useCallback(async () => {
             downloadDocument={downloadDocument}
             startEditing={startEditing}
             deleteDocument={deleteDocument}
-            goBack={() => setActivePage('documents')}
+            goBack={closeDocumentDetails}
             busy={busy || editBusy}
             message={message}
           />
