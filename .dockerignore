@@ -1,0 +1,12 @@
+.git
+.qodo
+**/node_modules
+**/target
+**/dist
+**/.env
+**/.env.*
+!**/.env.example
+trustvault-private-files
+trustvault/startup.log
+trustvault-frontend/src/App.backup.css
+trustvault-frontend/src/App.backup.jsx

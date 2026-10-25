@@ -4,6 +4,7 @@ package com.trustvault;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.annotation.Propagation;
 
 @Service
 public class UserService {
@@ -55,5 +56,19 @@ public class UserService {
         );
 
         return userRepository.save(user);
+    }
+
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public boolean createInitialUsers(
+            String adminEmail, String adminPassword,
+            String ownerEmail, String ownerPassword,
+            String viewerEmail, String viewerPassword) {
+        if (userRepository.count() != 0) {
+            return false;
+        }
+        createUser(adminEmail, adminPassword, UserRole.ADMIN);
+        createUser(ownerEmail, ownerPassword, UserRole.OWNER);
+        createUser(viewerEmail, viewerPassword, UserRole.VIEWER);
+        return true;
     }
 }
