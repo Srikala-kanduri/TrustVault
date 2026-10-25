@@ -11,9 +11,9 @@ TrustVault is a secure document-sharing application with per-document permission
 
 | Account | Email | Password |
 |---|---|---|
-| Admin | `admin@trustvault.com` | `REPLACE_WITH_DISPOSABLE_VERIFIER_PASSWORD` |
-| Owner | `owner@trustvault.com` | `REPLACE_WITH_DISPOSABLE_VERIFIER_PASSWORD` |
-| Viewer | `viewer@trustvault.com` | `REPLACE_WITH_DISPOSABLE_VERIFIER_PASSWORD` |
+| Admin | `admin@trustvault.com` | `Admin123456@@` |
+| Owner | `owner@trustvault.com` | `Owner123456@@` |
+| Viewer | `viewer@trustvault.com` | `Viewer123456@@` |
 
 The role labels identify the seeded demo accounts. All signed-in users can upload documents and manage the documents they upload. Owners can grant `READ` or `EDIT` access to another registered account. A user's access to documents uploaded by others comes only from an active grant. Admin can inspect the global audit trail, but admin status does not grant access to document contents. Every non-admin account sees only audit events attributed to its own email.
 
@@ -75,9 +75,9 @@ function Set-TrustVaultPassword([string]$Name, [string]$Prompt) {
     $secure.Dispose()
   }
 }
-Set-TrustVaultPassword 'TRUSTVAULT_DEV_ADMIN_PASSWORD' 'Local admin password'
-Set-TrustVaultPassword 'TRUSTVAULT_DEV_OWNER_PASSWORD' 'Local owner password'
-Set-TrustVaultPassword 'TRUSTVAULT_DEV_VIEWER_PASSWORD' 'Local viewer password'
+Set-TrustVaultPassword 'TRUSTVAULT_DEV_ADMIN_PASSWORD' 'Admin123456@@'
+Set-TrustVaultPassword 'TRUSTVAULT_DEV_OWNER_PASSWORD' 'Owner123456@@'
+Set-TrustVaultPassword 'TRUSTVAULT_DEV_VIEWER_PASSWORD' 'Viewer123456@@'
 ```
 
 The prompt masks typing; the password is briefly converted for the child process environment. Start the backend in one terminal:
