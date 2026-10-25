@@ -44,6 +44,12 @@ public class AuditLog {
     @Column(name = "occurred_at", nullable = false)
     private Instant occurredAt;
 
+    @Column(name = "previous_hash", length = 64)
+    private String previousHash;
+
+    @Column(name = "entry_hash", length = 64)
+    private String entryHash;
+
     protected AuditLog() {
     }
 
@@ -52,13 +58,18 @@ public class AuditLog {
             String action,
             Long documentId,
             String details,
-            String outcome) {
+            String outcome,
+            Instant occurredAt,
+            String previousHash,
+            String entryHash) {
         this.actorEmail = actorEmail;
         this.action = action;
         this.documentId = documentId;
         this.details = details;
         this.outcome = outcome;
-        this.occurredAt = Instant.now();
+        this.occurredAt = occurredAt;
+        this.previousHash = previousHash;
+        this.entryHash = entryHash;
     }
 
     public Long getId() {
@@ -88,4 +99,13 @@ public class AuditLog {
     public Instant getOccurredAt() {
         return occurredAt;
     }
+
+    public String getPreviousHash() {
+        return previousHash;
+    }
+
+    public String getEntryHash() {
+        return entryHash;
+    }
+
 }

@@ -1,125 +1,254 @@
 
 import { useCallback, useEffect, useState } from 'react'
-import './App.css'
 
-const API = 'http://localhost:8080'
+import {
+  API,
+  request,
+  csrfToken,
+  protectedRequest,
+} from './api/trustVaultApi'
 
-async function request(path, options = {}) {
-  const response = await fetch(`${API}${path}`, {
-    credentials: 'include',
-    ...options,
-  })
+import './Styles/tokens.css'
+import './Styles/global.css'
+import './Styles/layout.css'
 
-  if (!response.ok) {
-    const message = await response.text()
-    throw new Error(message || `Request failed (${response.status})`)
+import LoginPage from './pages/LoginPage'
+import DocumentsPage from './pages/DocumentsPage'
+import UploadPage from './pages/UploadPage'
+import SharedDocumentsPage from './pages/SharedDocumentsPage'
+import DocumentDetailsPage from './pages/DocumentDetailsPage'
+import AuditPage from './pages/AuditPage'
+import AdminPage from './pages/AdminPage'
+import AccessDeniedPage from './pages/AccessDeniedPage'
+
+import Sidebar from './components/Sidebar'
+import Brand from './components/Brand'
+
+function hasAdminRole(currentUser) {
+  if (!currentUser) return false
+
+  const roleValues = []
+
+  if (typeof currentUser === 'string') {
+    roleValues.push(currentUser)
+  } else if (typeof currentUser === 'object') {
+    roleValues.push(
+      currentUser.role,
+      currentUser.authorities,
+      currentUser.roles,
+      currentUser.authority,
+    )
   }
 
-  if (response.status === 204) return null
+  const rolesText = roleValues
+    .flat(Infinity)
+    .filter(Boolean)
+    .join(' ')
+    .toUpperCase()
 
-  const contentType = response.headers.get('content-type') || ''
-  return contentType.includes('application/json')
-    ? response.json()
-    : response.text()
+  return (
+    rolesText.includes('ROLE_ADMIN') ||
+    /\bADMIN\b/.test(rolesText)
+  )
 }
 
-async function csrfToken() {
-  return request('/api/csrf')
-}
+function hasOwnerRole(currentUser) {
+  if (!currentUser) return false
 
-async function protectedRequest(path, options = {}) {
-  const csrf = await csrfToken()
-  return request(path, {
-    ...options,
-    headers: {
-      ...(options.headers || {}),
-      [csrf.headerName]: csrf.token,
-    },
-  })
+  const roleValues = []
+
+  if (typeof currentUser === 'string') {
+    roleValues.push(currentUser)
+  } else if (typeof currentUser === 'object') {
+    roleValues.push(
+      currentUser.role,
+      currentUser.authorities,
+      currentUser.roles,
+      currentUser.authority,
+    )
+  }
+
+  const rolesText = roleValues
+    .flat(Infinity)
+    .filter(Boolean)
+    .join(' ')
+    .toUpperCase()
+
+  return rolesText.includes('ROLE_OWNER') || /\bOWNER\b/.test(rolesText)
 }
 
 function App() {
-  const [backendStatus, setBackendStatus] = useState('Checking backend...')
-  const [user, setUser] = useState('')
+  const [backendStatus, setBackendStatus] = useState(
+    'Checking backend...',
+  )
+
+  const [user, setUser] = useState(null)
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [loginMessage, setLoginMessage] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
 
+  const [activePage, setActivePage] = useState('documents')
+  const [selectedDocument, setSelectedDocument] = useState(null)
+
   const [documents, setDocuments] = useState([])
+  const [documentPermissions, setDocumentPermissions] = useState({})
+
   const [title, setTitle] = useState('')
   const [category, setCategory] = useState('')
   const [file, setFile] = useState(null)
+
   const [searchTitle, setSearchTitle] = useState('')
   const [searchCategory, setSearchCategory] = useState('')
   const [searchOwner, setSearchOwner] = useState('')
+  const [fromDate, setFromDate] = useState('')
+  const [toDate, setToDate] = useState('')
+
   const [message, setMessage] = useState('')
   const [busy, setBusy] = useState(false)
+
   const [auditLogs, setAuditLogs] = useState([])
   const [showAudit, setShowAudit] = useState(false)
-  const [sharingDocumentId, setSharingDocumentId] = useState('')
+
+ const [sharingDocumentId, setSharingDocumentId] = useState('')
 const [sharingEmail, setSharingEmail] = useState('')
 const [sharingLevel, setSharingLevel] = useState('READ')
 const [sharingBusy, setSharingBusy] = useState(false)
+const [existingShares, setExistingShares] = useState([])
+const [sharesBusy, setSharesBusy] = useState(false)
 
-  const isAdmin = user.includes('ROLE_ADMIN') || user.includes('ADMIN')
+  const [editingDocument, setEditingDocument] = useState(null)
+  const [editTitle, setEditTitle] = useState('')
+  const [editCategory, setEditCategory] = useState('')
+  const [editBusy, setEditBusy] = useState(false)
+  const [replacementFile, setReplacementFile] = useState(null)
 
+  const normalizedEmail = email.trim().toLowerCase()
+  const isAdmin = hasAdminRole(user)
+  const isOwner = hasOwnerRole(user)
+
+  // Check whether the existing backend health endpoint is reachable.
   useEffect(() => {
+    let cancelled = false
+
     fetch(`${API}/api/health`)
       .then((response) => {
-        if (!response.ok) throw new Error()
-        setBackendStatus('Backend connected')
+        if (!response.ok) {
+          throw new Error('Backend unavailable')
+        }
+
+        if (!cancelled) {
+          setBackendStatus('Backend connected')
+        }
       })
-      .catch(() => setBackendStatus('Backend unavailable'))
+      .catch(() => {
+        if (!cancelled) {
+          setBackendStatus('Backend unavailable')
+        }
+      })
+
+    return () => {
+      cancelled = true
+    }
   }, [])
 
+
+
+
+  // Retrieve the current user's permissions for each accessible document.
+  const loadDocumentPermissions = useCallback(async (documentList) => {
+    const results = await Promise.all(
+      documentList.map(async (doc) => {
+        try {
+          const permissions = await request(
+            `/api/documents/${doc.id}/my-permissions`,
+          )
+
+          return [doc.id, permissions]
+        } catch {
+          return [
+            doc.id,
+            { isOwner: false, canEdit: false },
+          ]
+        }
+      }),
+    )
+
+    setDocumentPermissions(Object.fromEntries(results))
+  }, [])
+
+  // Load the documents available to the authenticated account.
   const loadDocuments = useCallback(async () => {
     try {
       const result = await request('/api/documents')
-      setDocuments(result)
+      const safeDocuments = Array.isArray(result) ? result : []
+
+      setDocuments(safeDocuments)
+      await loadDocumentPermissions(safeDocuments)
     } catch (error) {
       setMessage(`Could not load documents: ${error.message}`)
     }
-  }, [])
+  }, [loadDocumentPermissions])
 
-  async function handleLogin(event) {
-    event.preventDefault()
-    setIsSubmitting(true)
+  // The LoginPage passes { email, password } to this callback.
+ const handleLogin = async (event) => {
+  event.preventDefault()
+  setIsSubmitting(true)
+  setLoginMessage('')
+
+  try {
+    const csrf = await csrfToken()
+
+    const response = await fetch(`${API}/login`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        [csrf.headerName]: csrf.token,
+      },
+      body: new URLSearchParams({
+        username: email.trim(),
+        password,
+      }),
+    })
+
+    if (!response.ok) {
+      throw new Error(`Login failed (${response.status})`)
+    }
+
+    const currentUser = await request('/api/me')
+
+    setUser(currentUser)
+    setEmail(email.trim())
+    setPassword('')
+    setActivePage('documents')
     setLoginMessage('')
 
-    try {
-      const csrf = await csrfToken()
-      const body = new URLSearchParams({ username: email, password })
-
-      const response = await fetch(`${API}/login`, {
-        method: 'POST',
-        credentials: 'include',
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
-          [csrf.headerName]: csrf.token,
-        },
-        body,
-      })
-
-      if (!response.ok) {
-        setLoginMessage('Login failed. Check your credentials.')
-        return
-      }
-
-      const currentUser = await request('/api/me')
-      setUser(currentUser)
-      setPassword('')
-      setLoginMessage('')
-      await loadDocuments()
-    } catch (error) {
-      setLoginMessage(error.message || 'Unable to connect to backend')
-    } finally {
-      setIsSubmitting(false)
-    }
+    await loadDocuments()
+  } catch (error) {
+    console.error('Login error:', error)
+    setLoginMessage(
+      error.message === 'Login failed (401)'
+        ? 'Login failed: the backend rejected the credentials.'
+        : `Login failed: ${error.message}`,
+    )
+  } finally {
+    setIsSubmitting(false)
   }
+}
 
+  // Upload using the existing document endpoint.
   async function uploadDocument(event) {
     event.preventDefault()
+
+    // Preserve the form reference before awaiting network requests.
+    const formElement = event.currentTarget
+
+    if (!title.trim()) {
+      setMessage('Enter a document title.')
+      return
+    }
+
     if (!file) {
       setMessage('Choose a file to upload.')
       return
@@ -130,8 +259,9 @@ const [sharingBusy, setSharingBusy] = useState(false)
 
     try {
       const form = new FormData()
-      form.append('title', title)
-      form.append('category', category)
+
+      form.append('title', title.trim())
+      form.append('category', category.trim())
       form.append('file', file)
 
       await protectedRequest('/api/documents', {
@@ -142,9 +272,12 @@ const [sharingBusy, setSharingBusy] = useState(false)
       setTitle('')
       setCategory('')
       setFile(null)
-      event.target.reset()
+      formElement.reset()
+
       setMessage('Document uploaded successfully.')
+
       await loadDocuments()
+      setActivePage('documents')
     } catch (error) {
       setMessage(`Upload failed: ${error.message}`)
     } finally {
@@ -152,23 +285,60 @@ const [sharingBusy, setSharingBusy] = useState(false)
     }
   }
 
+  // Search through the backend so all filters use its accessible-document
+  // and created-date rules consistently.
   async function searchDocuments(event) {
     event.preventDefault()
+
+    if (fromDate && toDate && fromDate > toDate) {
+      setMessage('The from date must not be later than the to date.')
+      return
+    }
+
     const params = new URLSearchParams()
 
-    if (searchTitle.trim()) params.set('title', searchTitle.trim())
-    if (searchCategory.trim()) params.set('category', searchCategory.trim())
-    if (searchOwner.trim()) params.set('ownerEmail', searchOwner.trim())
+    if (searchTitle.trim()) {
+      params.set('title', searchTitle.trim())
+    }
+
+    if (searchCategory.trim()) {
+      params.set('category', searchCategory.trim())
+    }
+
+    if (searchOwner.trim()) {
+      params.set('ownerEmail', searchOwner.trim())
+    }
+
+    if (fromDate) {
+      params.set('fromDate', `${fromDate}T00:00:00Z`)
+    }
+
+    if (toDate) {
+      params.set('toDate', `${toDate}T23:59:59.999999999Z`)
+    }
 
     setBusy(true)
     setMessage('')
 
     try {
       const query = params.toString()
+
       const result = await request(
         `/api/documents/search${query ? `?${query}` : ''}`,
       )
-      setDocuments(result)
+
+      const searchResults = Array.isArray(result) ? result : []
+
+      setDocuments(searchResults)
+      await loadDocumentPermissions(searchResults)
+
+      if (
+        (searchTitle.trim() || searchCategory.trim() || searchOwner.trim() ||
+          fromDate || toDate) &&
+        searchResults.length === 0
+      ) {
+        setMessage('No documents match the selected filters.')
+      }
     } catch (error) {
       setMessage(`Search failed: ${error.message}`)
     } finally {
@@ -176,12 +346,13 @@ const [sharingBusy, setSharingBusy] = useState(false)
     }
   }
 
-  async function downloadDocument(document) {
+  // Download a document using the existing download endpoint.
+  async function downloadDocument(doc) {
     setMessage('')
 
     try {
       const response = await fetch(
-        `${API}/api/documents/${document.id}/download`,
+        `${API}/api/documents/${doc.id}/download`,
         { credentials: 'include' },
       )
 
@@ -192,27 +363,137 @@ const [sharingBusy, setSharingBusy] = useState(false)
       const blob = await response.blob()
       const url = URL.createObjectURL(blob)
       const link = window.document.createElement('a')
+
       link.href = url
-      link.download = document.originalFilename || document.title
+      link.download =
+        doc.originalFilename || doc.title || 'document'
+
+      window.document.body.appendChild(link)
       link.click()
-      URL.revokeObjectURL(url)
+      link.remove()
+
+      // Revoke after the browser has had time to start the download.
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000)
     } catch (error) {
       setMessage(error.message)
     }
   }
 
-  async function deleteDocument(document) {
-    if (!window.confirm(`Delete "${document.title}" permanently?`)) return
+  async function viewDocument(doc) {
+    if (busy) return
 
     setBusy(true)
     setMessage('')
 
     try {
-      await protectedRequest(`/api/documents/${document.id}`, {
+      const documentDetails = await request(`/api/documents/${doc.id}`)
+      setSelectedDocument(documentDetails)
+      setActivePage('details')
+    } catch (error) {
+      setMessage(`Could not open document: ${error.message}`)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  function startEditing(doc) {
+    setEditingDocument(doc)
+    setEditTitle(doc.title || '')
+    setEditCategory(doc.category || '')
+    setReplacementFile(null)
+    setMessage('')
+  }
+
+  function cancelEditing() {
+    setEditingDocument(null)
+    setEditTitle('')
+    setEditCategory('')
+    setReplacementFile(null)
+  }
+
+  // Update metadata and, optionally, replace the underlying file.
+  async function saveDocumentEdit(event) {
+    event.preventDefault()
+
+    if (!editingDocument || editBusy) return
+
+    setEditBusy(true)
+    setMessage('')
+
+    try {
+      await protectedRequest(
+        `/api/documents/${editingDocument.id}`,
+        {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            title: editTitle.trim(),
+            category: editCategory.trim(),
+          }),
+        },
+      )
+
+      if (replacementFile) {
+        const form = new FormData()
+        form.append('file', replacementFile)
+
+        await protectedRequest(
+          `/api/documents/${editingDocument.id}/file`,
+          {
+            method: 'PUT',
+            body: form,
+          },
+        )
+      }
+
+      await loadDocuments()
+
+      setMessage(
+        replacementFile
+          ? 'Document details and file updated successfully.'
+          : 'Document details updated successfully.',
+      )
+
+      cancelEditing()
+    } catch (error) {
+      setMessage(
+        `Update failed: ${error.message}. Verify the document before retrying.`,
+      )
+
+      await loadDocuments()
+    } finally {
+      setEditBusy(false)
+    }
+  }
+
+  async function deleteDocument(doc) {
+    if (!window.confirm(`Delete "${doc.title}" permanently?`)) {
+      return
+    }
+
+    setBusy(true)
+    setMessage('')
+
+    try {
+      await protectedRequest(`/api/documents/${doc.id}`, {
         method: 'DELETE',
       })
+
+      setExistingShares((currentShares) =>
+        currentShares.filter((share) => share.documentId !== doc.id),
+      )
       setMessage('Document deleted.')
-      await loadDocuments()
+
+      if (selectedDocument?.id === doc.id) {
+        setSelectedDocument(null)
+        setActivePage('documents')
+      }
+
+      if (editingDocument?.id === doc.id) {
+        cancelEditing()
+      }
+
+      await Promise.all([loadDocuments(), loadExistingShares()])
     } catch (error) {
       setMessage(`Deletion failed: ${error.message}`)
     } finally {
@@ -220,384 +501,717 @@ const [sharingBusy, setSharingBusy] = useState(false)
     }
   }
 
-  async function loadAuditLogs() {
+  // Administrators see the global log; other roles see only their own events.
+  const loadAuditLogs = useCallback(async () => {
+    setBusy(true)
+
     try {
-      const logs = await request('/api/admin/audit-logs')
-      setAuditLogs(logs)
+      const endpoint = isAdmin
+        ? '/api/admin/audit-logs'
+        : '/api/audit-logs'
+      const logs = await request(endpoint)
+
+      setAuditLogs(Array.isArray(logs) ? logs : [])
       setShowAudit(true)
       setMessage('')
     } catch (error) {
+      setAuditLogs([])
       setMessage(`Could not load audit logs: ${error.message}`)
+    } finally {
+      setBusy(false)
     }
-  }
+  }, [isAdmin])
+
+  useEffect(() => {
+    if (user && activePage === 'audit') {
+      loadAuditLogs()
+    }
+  }, [user, activePage, loadAuditLogs])
 
   async function logout() {
     try {
       const csrf = await csrfToken()
+
       await fetch(`${API}/logout`, {
         method: 'POST',
         credentials: 'include',
-        headers: { [csrf.headerName]: csrf.token },
+        headers: {
+          [csrf.headerName]: csrf.token,
+        },
       })
+    } catch {
+      // Clear the local session even if the logout request fails.
     } finally {
-      setUser('')
+      setUser(null)
+      setEmail('')
       setDocuments([])
+      setDocumentPermissions({})
       setAuditLogs([])
       setShowAudit(false)
+      setSelectedDocument(null)
+
+      setTitle('')
+      setCategory('')
+      setFile(null)
+
+      setSearchTitle('')
+      setSearchCategory('')
+      setSearchOwner('')
+      setFromDate('')
+      setToDate('')
+
+      cancelEditing()
+
+      setSharingDocumentId('')
+      setSharingEmail('')
+      setSharingLevel('READ')
+      setExistingShares([])
+
       setMessage('')
+      setActivePage('documents')
       setLoginMessage('You have signed out.')
     }
   }
 
-async function grantDocumentPermission(event) {
-  event.preventDefault()
+  // Grant access through the existing permission endpoint.
+  async function grantDocumentPermission(event) {
+    event.preventDefault()
 
-  if (!sharingDocumentId || !sharingEmail.trim()) {
-    setMessage('Select a document and enter the recipient email.')
-    return
+    if (!sharingDocumentId || !sharingEmail.trim()) {
+      setMessage('Select a document and enter the recipient email.')
+      return
+    }
+
+    setSharingBusy(true)
+    setMessage('')
+
+    try {
+      const result = await protectedRequest(
+        `/api/documents/${sharingDocumentId}/permissions`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            email: sharingEmail.trim(),
+            permissionLevel: sharingLevel,
+          }),
+        },
+      )
+
+      setMessage(
+        `Permission ${result.permissionLevel} granted to ${result.email}.`,
+      )
+      await loadExistingShares()
+      await loadDocuments()
+
+    } catch (error) {
+      setMessage(`Could not grant permission: ${error.message}`)
+    } finally {
+      setSharingBusy(false)
+    }
   }
 
-  setSharingBusy(true)
-  setMessage('')
+  // Revoke access through the existing permission endpoint.
+  async function revokeDocumentPermission(event) {
+    event.preventDefault()
+
+    if (!sharingDocumentId || !sharingEmail.trim()) {
+      setMessage('Select a document and enter the recipient email.')
+      return
+    }
+
+    if (
+      !window.confirm(
+        `Revoke access for ${sharingEmail.trim()} to this document?`,
+      )
+    ) {
+      return
+    }
+
+    setSharingBusy(true)
+    setMessage('')
+
+    try {
+      const params = new URLSearchParams({
+        email: sharingEmail.trim(),
+      })
+
+      await protectedRequest(
+        `/api/documents/${sharingDocumentId}/permissions?${params}`,
+        { method: 'DELETE' },
+      )
+
+      setMessage(`Permission revoked for ${sharingEmail.trim()}.`)
+
+      await loadDocuments()
+    } catch (error) {
+      setMessage(`Could not revoke permission: ${error.message}`)
+    } finally {
+      setSharingBusy(false)
+    }
+  }
+
+  // Clear the filter values before refreshing the library.
+  function clearDocumentFilters() {
+    setSearchTitle('')
+    setSearchCategory('')
+    setSearchOwner('')
+    setFromDate('')
+    setToDate('')
+
+    loadDocuments()
+  }
+
+  const ownedDocuments = documents.filter((doc) => {
+    const permissions = documentPermissions[doc.id] || {}
+    const ownerEmail = (doc.ownerEmail || '').trim().toLowerCase()
+
+    return (
+      permissions.isOwner === true ||
+      (Boolean(normalizedEmail) && ownerEmail === normalizedEmail)
+    )
+  })
+
+  const sharedDocuments = documents.filter((doc) => {
+    const permissions = documentPermissions[doc.id] || {}
+    const ownerEmail = (doc.ownerEmail || '').trim().toLowerCase()
+
+    return (
+      permissions.isOwner !== true &&
+      (!ownerEmail || ownerEmail !== normalizedEmail)
+    )
+  })
+
+  function renderEditForm() {
+    if (!editingDocument) return null
+
+    return (
+      <form
+        className="panel edit-document-form"
+        onSubmit={saveDocumentEdit}
+      >
+        <div className="section-heading">
+          <div>
+            <p className="eyebrow">DOCUMENT SETTINGS</p>
+            <h3>Edit document</h3>
+          </div>
+
+          <button
+            type="button"
+            className="secondary-button"
+            onClick={cancelEditing}
+            disabled={editBusy}
+          >
+            Cancel
+          </button>
+        </div>
+
+        <p className="description">
+          Editing:{' '}
+          {editingDocument.originalFilename || editingDocument.title}
+        </p>
+
+        <div className="form-grid">
+          <div className="form-field">
+            <label htmlFor="edit-title">Document title</label>
+            <input
+              id="edit-title"
+              value={editTitle}
+              onChange={(event) => setEditTitle(event.target.value)}
+              maxLength={200}
+              required
+            />
+          </div>
+
+          <div className="form-field">
+            <label htmlFor="edit-category">Category</label>
+            <input
+              id="edit-category"
+              value={editCategory}
+              onChange={(event) => setEditCategory(event.target.value)}
+              maxLength={100}
+              required
+            />
+          </div>
+
+          <div className="form-field">
+            <label htmlFor="replacement-file">
+              Replace file (optional)
+            </label>
+
+            <input
+              id="replacement-file"
+              type="file"
+              accept=".pdf,.png,.jpg,.jpeg"
+              onChange={(event) =>
+                setReplacementFile(event.target.files?.[0] || null)
+              }
+            />
+
+            {replacementFile && (
+              <p className="field-hint">
+                Selected: {replacementFile.name}
+              </p>
+            )}
+          </div>
+        </div>
+
+        <div className="button-row">
+          <button
+            type="submit"
+            className="primary-button"
+            disabled={editBusy}
+          >
+            {editBusy ? 'Saving…' : 'Save changes'}
+          </button>
+
+          <button
+            type="button"
+            className="secondary-button"
+            onClick={cancelEditing}
+            disabled={editBusy}
+          >
+            Cancel
+          </button>
+        </div>
+      </form>
+    )
+  }
+
+
+
+
+const loadExistingShares = useCallback(async () => {
+  setSharesBusy(true)
 
   try {
-    const result = await protectedRequest(
-      `/api/documents/${sharingDocumentId}/permissions`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          email: sharingEmail.trim(),
-          permissionLevel: sharingLevel,
-        }),
-      },
-    )
-
+    const result = await request('/api/permissions/my-grants')
+    setExistingShares(Array.isArray(result) ? result : [])
+  } catch (error) {
+    setExistingShares([])
     setMessage(
-      `Permission ${result.permissionLevel} granted to ${result.email}.`,
+      `Could not load existing shares: ${error.message}`
     )
-  } catch (error) {
-    setMessage(`Could not grant permission: ${error.message}`)
   } finally {
-    setSharingBusy(false)
+    setSharesBusy(false)
   }
-}
+}, [])
 
-async function revokeDocumentPermission(event) {
-  event.preventDefault()
+  useEffect(() => {
+    if (!user) {
+      setExistingShares([])
+      return
+    }
 
-  if (!sharingDocumentId || !sharingEmail.trim()) {
-    setMessage('Select a document and enter the recipient email.')
-    return
-  }
+    loadExistingShares()
+  }, [user, loadExistingShares])
 
-  if (!window.confirm(
-    `Revoke access for ${sharingEmail.trim()} to this document?`,
-  )) {
-    return
-  }
 
-  setSharingBusy(true)
-  setMessage('')
 
-  try {
-    const params = new URLSearchParams({ email: sharingEmail.trim() })
+  function renderSharingPanel() {
+    return (
+      <>
+      <section className="panel">
+        <div className="section-heading">
+          <div>
+            <p className="eyebrow">ACCESS CONTROL</p>
+            <h3>Share a document</h3>
+            <p className="description">
+              Grant or revoke access to a document you own.
+            </p>
+          </div>
+        </div>
 
-    await protectedRequest(
-      `/api/documents/${sharingDocumentId}/permissions?${params}`,
-      { method: 'DELETE' },
+        <form onSubmit={grantDocumentPermission}>
+          <div className="form-grid">
+            <div className="form-field">
+              <label htmlFor="sharing-document">Document</label>
+              <select
+                id="sharing-document"
+                value={sharingDocumentId}
+                onChange={(event) =>
+                  setSharingDocumentId(event.target.value)
+                }
+                required
+              >
+                <option value="">Select a document</option>
+
+                {ownedDocuments.map((doc) => (
+                  <option key={doc.id} value={doc.id}>
+                    {doc.title || doc.originalFilename || doc.id}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="form-field">
+              <label htmlFor="sharing-email">Recipient email</label>
+              <input
+                id="sharing-email"
+                type="email"
+                value={sharingEmail}
+                onChange={(event) => setSharingEmail(event.target.value)}
+                required
+              />
+            </div>
+
+            <div className="form-field">
+              <label htmlFor="sharing-level">Permission level</label>
+              <select
+                id="sharing-level"
+                value={sharingLevel}
+                onChange={(event) => setSharingLevel(event.target.value)}
+              >
+                <option value="READ">Read only</option>
+                <option value="EDIT">Read and edit</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="button-row">
+            <button
+              type="submit"
+              className="primary-button"
+              disabled={sharingBusy}
+            >
+              {sharingBusy ? 'Please wait…' : 'Grant access'}
+            </button>
+          </div>
+        </form>
+
+      </section>
+
+      <section className="panel existing-shares">
+  <div className="section-heading">
+    <div>
+      <p className="eyebrow">ACCESS MANAGEMENT</p>
+      <h3>All active access grants</h3>
+      <p className="description">
+        Review and revoke access across all documents you own.
+      </p>
+    </div>
+
+    <button
+      type="button"
+      className="secondary-button"
+      onClick={loadExistingShares}
+      disabled={sharesBusy}
+    >
+      {sharesBusy ? 'Loading…' : 'Refresh shares'}
+    </button>
+  </div>
+
+  {sharesBusy ? (
+    <p>Loading access grants…</p>
+  ) : existingShares.length === 0 ? (
+    <div className="empty-state">
+      <h3>No active access grants</h3>
+      <p>
+        Grants you create for documents you own will appear here.
+      </p>
+    </div>
+  ) : (
+    <div className="table-wrapper">
+      <table className="data-table">
+        <thead>
+          <tr>
+            <th>Document</th>
+            <th>Recipient</th>
+            <th>Permission</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+
+        <tbody>
+          {existingShares.map((share) => (
+            <tr
+              key={`${share.documentId}-${share.recipientEmail}`}
+            >
+              <td>{share.documentTitle}</td>
+              <td>{share.recipientEmail}</td>
+              <td>
+                {share.permissionLevel === 'EDIT'
+                  ? 'Read and edit'
+                  : share.permissionLevel === 'READ'
+                    ? 'Read only'
+                    : share.permissionLevel}
+              </td>
+              <td>
+                <button
+                  type="button"
+                  className="table-action table-action-danger"
+                  disabled={sharingBusy || share.status === 'REVOKED'}
+                  onClick={async () => {
+                    if (
+                      !window.confirm(
+                        `Revoke access for ${share.recipientEmail} to ${share.documentTitle}?`
+                      )
+                    ) {
+                      return
+                    }
+
+                    setSharingBusy(true)
+                    setMessage('')
+
+                    try {
+                      const params = new URLSearchParams({
+                        email: share.recipientEmail,
+                      })
+
+                      await protectedRequest(
+                        `/api/documents/${share.documentId}/permissions?${params}`,
+                        { method: 'DELETE' }
+                      )
+
+                      setExistingShares((currentShares) =>
+                        currentShares.map((currentShare) =>
+                          currentShare.documentId === share.documentId &&
+                          currentShare.recipientEmail === share.recipientEmail
+                            ? { ...currentShare, status: 'REVOKED' }
+                            : currentShare,
+                        ),
+                      )
+                      setMessage(
+                        `Access revoked for ${share.recipientEmail} on ${share.documentTitle}.`
+                      )
+
+                      await loadDocuments()
+                    } catch (error) {
+                      setMessage(
+                        `Could not revoke access: ${error.message}`
+                      )
+                    } finally {
+                      setSharingBusy(false)
+                    }
+                  }}
+                >
+                  {share.status === 'REVOKED' ? 'Revoked' : 'Revoke'}
+                </button>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )}
+      </section>
+      </>
     )
-
-    setMessage(`Permission revoked for ${sharingEmail.trim()}.`)
-  } catch (error) {
-    setMessage(`Could not revoke permission: ${error.message}`)
-  } finally {
-    setSharingBusy(false)
   }
-}
+
+  function renderPage() {
+    switch (activePage) {
+      case 'documents':
+        return (
+          <>
+            <DocumentsPage
+              documents={documents}
+              documentPermissions={documentPermissions}
+              email={email}
+              searchTitle={searchTitle}
+              setSearchTitle={setSearchTitle}
+              searchCategory={searchCategory}
+              setSearchCategory={setSearchCategory}
+              searchOwner={searchOwner}
+              setSearchOwner={setSearchOwner}
+              fromDate={fromDate}
+              setFromDate={setFromDate}
+              toDate={toDate}
+              setToDate={setToDate}
+              searchDocuments={searchDocuments}
+              loadDocuments={clearDocumentFilters}
+              downloadDocument={downloadDocument}
+              startEditing={startEditing}
+              deleteDocument={deleteDocument}
+              viewDocument={viewDocument}
+              busy={busy}
+              message={message}
+            />
+
+            {renderEditForm()}
+            {renderSharingPanel()}
+          </>
+        )
+
+      case 'upload':
+        if (!isOwner) {
+          return (
+            <AccessDeniedPage
+              message="Only document owners can upload documents."
+              goBack={() => setActivePage('documents')}
+              goToDocuments={() => setActivePage('documents')}
+            />
+          )
+        }
+        return (
+          <UploadPage
+            title={title}
+            setTitle={setTitle}
+            category={category}
+            setCategory={setCategory}
+            file={file}
+            setFile={setFile}
+            uploadDocument={uploadDocument}
+            busy={busy}
+            message={message}
+          />
+        )
+
+      case 'shared':
+        return (
+          <>
+            <SharedDocumentsPage
+              documents={sharedDocuments}
+              documentPermissions={documentPermissions}
+              email={email}
+              loadDocuments={loadDocuments}
+              downloadDocument={downloadDocument}
+              startEditing={startEditing}
+              deleteDocument={deleteDocument}
+              busy={busy}
+              message={message}
+            />
+
+            {renderEditForm()}
+          </>
+        )
+
+      case 'details':
+        return (
+          <DocumentDetailsPage
+            document={selectedDocument}
+            permission={
+              selectedDocument
+                ? documentPermissions[selectedDocument.id] || {}
+                : {}
+            }
+            email={email}
+            downloadDocument={downloadDocument}
+            startEditing={startEditing}
+            deleteDocument={deleteDocument}
+            goBack={() => setActivePage('documents')}
+            busy={busy || editBusy}
+            message={message}
+          />
+        )
+
+
+case 'audit':
+  return (
+    <AuditPage
+      auditLogs={showAudit ? auditLogs : []}
+      busy={busy}
+      message={message}
+      loadAuditLogs={loadAuditLogs}
+    />
+  )
+
+
+        return (
+          <AuditPage
+            auditLogs={showAudit ? auditLogs : []}
+            busy={busy}
+            message={message}
+            loadAuditLogs={loadAuditLogs}
+          />
+        )
+
+      case 'admin':
+        if (!isAdmin) {
+          return (
+            <AccessDeniedPage
+              message="Administrator privileges are required to access this page."
+              goBack={() => setActivePage('documents')}
+              goToDocuments={() => setActivePage('documents')}
+            />
+          )
+        }
+
+        return (
+          <AdminPage
+            auditLogs={showAudit ? auditLogs : []}
+            busy={busy}
+            message={message}
+            loadAuditLogs={loadAuditLogs}
+            currentUser={user}
+          >
+            {renderSharingPanel()}
+          </AdminPage>
+        )
+
+      default:
+        return (
+          <AccessDeniedPage
+            message="This page is not available."
+            goBack={() => setActivePage('documents')}
+            goToDocuments={() => setActivePage('documents')}
+          />
+        )
+    }
+  }
 
   if (!user) {
     return (
-      <main className="login-page">
-        <section className="login-card">
-          <div className="brand">
-            <div className="brand-icon">T</div>
-            <h1>TrustVault</h1>
-          </div>
-          <p className="subtitle">
-            Secure document sharing. Complete accountability.
-          </p>
-          <h2>Welcome back</h2>
-          <p className="description">Sign in to your secure workspace.</p>
-
-          <form onSubmit={handleLogin}>
-            <label htmlFor="email">Email address</label>
-            <input
-              id="email"
-              type="email"
-              value={email}
-              onChange={(event) => setEmail(event.target.value)}
-              autoComplete="username"
-              required
-            />
-            <label htmlFor="password">Password</label>
-            <input
-              id="password"
-              type="password"
-              value={password}
-              onChange={(event) => setPassword(event.target.value)}
-              autoComplete="current-password"
-              required
-            />
-            <button type="submit" disabled={isSubmitting}>
-              {isSubmitting ? 'Signing in...' : 'Sign in'}
-            </button>
-          </form>
-
-          <p className="connection-status" role="status">{backendStatus}</p>
-          {loginMessage && <p role="status">{loginMessage}</p>}
-        </section>
-      </main>
+      <LoginPage
+  email={email}
+  setEmail={setEmail}
+  password={password}
+  setPassword={setPassword}
+  handleLogin={handleLogin}
+  isSubmitting={isSubmitting}
+  backendStatus={backendStatus}
+  loginMessage={loginMessage}
+/>
     )
   }
 
   return (
-    <main className="workspace">
-      <header className="workspace-header">
-        <div className="brand">
-          <div className="brand-icon">T</div>
-          <div>
-            <h1>TrustVault</h1>
-            <p className="subtitle">Secure document workspace</p>
-          </div>
-        </div>
-        <div className="session-actions">
-          <span>{user}</span>
-          <button type="button" onClick={logout}>Sign out</button>
-        </div>
-      </header>
+    <div className="app-layout">
 
-      <section className="workspace-content">
-        <h2>Your documents</h2>
-        <p className="description">
-          Upload and manage documents you own or have permission to access.
-        </p>
+<Sidebar
+  activePage={activePage}
+  setActivePage={(page) => {
+    // Administration remains restricted to admins.
+    if (page === 'admin' && !isAdmin) {
+      setMessage('Administrator privileges are required.')
+      return
+    }
 
-        <form className="panel" onSubmit={uploadDocument}>
-          <h3>Upload document</h3>
-          <label htmlFor="doc-title">Title</label>
-          <input
-            id="doc-title"
-            value={title}
-            onChange={(event) => setTitle(event.target.value)}
-            maxLength={200}
-            required
-          />
-          <label htmlFor="doc-category">Category</label>
-          <input
-            id="doc-category"
-            value={category}
-            onChange={(event) => setCategory(event.target.value)}
-            maxLength={100}
-            required
-          />
-          <label htmlFor="doc-file">File (PDF, PNG, or JPEG supported by backend)</label>
-          <input
-            id="doc-file"
-            type="file"
-            accept=".pdf,.png,.jpg,.jpeg"
-            onChange={(event) => setFile(event.target.files?.[0] || null)}
-            required
-          />
-          <button disabled={busy} type="submit">
-            {busy ? 'Please wait...' : 'Upload document'}
-          </button>
-        </form>
+    setMessage('')
+    setActivePage(page)
+  }}
+  currentUser={user}
+  email={email}
+  isAdmin={isAdmin}
+  canUpload={isOwner}
+  onLogout={logout}
+  busy={isSubmitting}
+/>
 
-<section className="panel">
-  <h3>Share a document</h3>
-  <p className="description">
-    Grant or revoke access to a document you own.
-  </p>
 
-  <form onSubmit={grantDocumentPermission}>
-    <label htmlFor="sharing-document">Document</label>
-    <select
-      id="sharing-document"
-      value={sharingDocumentId}
-      onChange={(event) => setSharingDocumentId(event.target.value)}
-      required
-    >
-      <option value="">Select a document</option>
-      {documents
-        .filter((doc) => doc.ownerEmail.toLowerCase() === email.toLowerCase())
-        .map((doc) => (
-          <option key={doc.id} value={doc.id}>
-            {doc.title}
-          </option>
-        ))}
-    </select>
+      <main className="workspace-main">
 
-    <label htmlFor="sharing-email">Recipient email</label>
-    <input
-      id="sharing-email"
-      type="email"
-      value={sharingEmail}
-      onChange={(event) => setSharingEmail(event.target.value)}
-      required
-    />
 
-    <label htmlFor="sharing-level">Permission level</label>
-    <select
-      id="sharing-level"
-      value={sharingLevel}
-      onChange={(event) => setSharingLevel(event.target.value)}
-    >
-      <option value="READ">Read only</option>
-      <option value="EDIT">Read and edit</option>
-    </select>
+<header className="workspace-header">
+  <div className="header-spacer" />
 
-    <div className="button-row">
-      <button type="submit" disabled={sharingBusy}>
-        {sharingBusy ? 'Please wait...' : 'Grant access'}
-      </button>
+  <button
+    type="button"
+    className="secondary-button"
+    onClick={logout}
+    disabled={isSubmitting}
+  >
+    Sign out
+  </button>
+</header>
 
-      <button
-        type="button"
-        className="danger-button"
-        disabled={sharingBusy}
-        onClick={revokeDocumentPermission}
-      >
-        Revoke access
-      </button>
-    </div>
-  </form>
-</section>
 
-        <form className="panel search-panel" onSubmit={searchDocuments}>
-          <h3>Search documents</h3>
-          <label htmlFor="search-title">Title</label>
-          <input
-            id="search-title"
-            value={searchTitle}
-            onChange={(event) => setSearchTitle(event.target.value)}
-          />
-          <label htmlFor="search-category">Category</label>
-          <input
-            id="search-category"
-            value={searchCategory}
-            onChange={(event) => setSearchCategory(event.target.value)}
-          />
-          <label htmlFor="search-owner">Owner email</label>
-          <input
-            id="search-owner"
-            type="email"
-            value={searchOwner}
-            onChange={(event) => setSearchOwner(event.target.value)}
-          />
-          <div className="button-row">
-            <button disabled={busy} type="submit">Search</button>
-            <button
-              type="button"
-              className="secondary-button"
-              onClick={() => {
-                setSearchTitle('')
-                setSearchCategory('')
-                setSearchOwner('')
-                loadDocuments()
-              }}
-            >
-              Clear filters
-            </button>
-          </div>
-        </form>
 
-        {message && <p className="notice" role="status">{message}</p>}
-
-        <section className="panel">
-          <div className="section-heading">
-            <h3>Accessible documents</h3>
-            <button type="button" onClick={loadDocuments}>Refresh</button>
-          </div>
-          {documents.length === 0 ? (
-            <p className="description">No documents found.</p>
-          ) : (
-            <div className="table-wrapper">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Title</th>
-                    <th>Category</th>
-                    <th>Owner</th>
-                    <th>Updated</th>
-                    <th>Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {documents.map((doc) => (
-                    <tr key={doc.id}>
-                      <td>{doc.title}</td>
-                      <td>{doc.category}</td>
-                      <td>{doc.ownerEmail}</td>
-                      <td>{doc.updatedAt ? new Date(doc.updatedAt).toLocaleString() : '—'}</td>
-                      <td>
-                        <div className="button-row">
-                          <button type="button" onClick={() => downloadDocument(doc)}>
-                            Download
-                          </button>
-                          <button
-                            type="button"
-                            className="danger-button"
-                            onClick={() => deleteDocument(doc)}
-                          >
-                            Delete
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
+        <section className="workspace-content">
+          {renderPage()}
         </section>
-
-        {isAdmin && (
-          <section className="panel">
-            <div className="section-heading">
-              <h3>Administrator audit logs</h3>
-              <button type="button" onClick={loadAuditLogs}>Load audit logs</button>
-            </div>
-            {showAudit && (
-              <div className="table-wrapper">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>Time</th>
-                      <th>Actor</th>
-                      <th>Action</th>
-                      <th>Document</th>
-                      <th>Outcome</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {auditLogs.map((log, index) => (
-                      <tr key={log.id ?? index}>
-                        <td>{log.occurredAt ? new Date(log.occurredAt).toLocaleString() : '—'}</td>
-                        <td>{log.actorEmail}</td>
-                        <td>{log.action}</td>
-                        <td>{log.documentId ?? '—'}</td>
-                        <td>{log.outcome}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </section>
-        )}
-      </section>
-    </main>
+      </main>
+    </div>
   )
 }
 

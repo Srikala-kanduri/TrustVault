@@ -79,11 +79,11 @@ class DocumentPermissionServiceTest {
                 result.getPermissionLevel());
 
         verify(permissionRepository).save(result);
-        verify(auditService).record(
+        verify(auditService).recordInCurrentTransaction(
                 "owner@example.com",
                 "PERMISSION_GRANT",
                 10L,
-                "Permission READ granted or updated for target@example.com",
+                "Permission READ granted to target@example.com",
                 "SUCCESS");
     }
 
@@ -93,6 +93,8 @@ class DocumentPermissionServiceTest {
 
         when(permissionRepository.findByDocument_IdAndUser_Id(10L, 2L))
                 .thenReturn(Optional.of(existingPermission));
+        when(existingPermission.getPermissionLevel())
+                .thenReturn(DocumentPermission.PermissionLevel.READ);
 
         DocumentPermission result = permissionService.grantPermission(
                 10L,
@@ -105,11 +107,11 @@ class DocumentPermissionServiceTest {
         verify(existingPermission).setPermissionLevel(
                 DocumentPermission.PermissionLevel.EDIT);
 
-        verify(auditService).record(
+        verify(auditService).recordInCurrentTransaction(
                 "owner@example.com",
                 "PERMISSION_GRANT",
                 10L,
-                "Permission EDIT granted or updated for target@example.com",
+                "Permission for target@example.com changed from READ to EDIT",
                 "SUCCESS");
     }
 
@@ -118,9 +120,10 @@ class DocumentPermissionServiceTest {
 void revokePermissionDeletesExistingGrant() {
     setUpOwnerAndTarget();
 
-    when(permissionRepository
-            .existsByDocument_IdAndUser_Id(10L, 2L))
-            .thenReturn(true);
+    when(permissionRepository.findByDocument_IdAndUser_Id(10L, 2L))
+            .thenReturn(Optional.of(existingPermission));
+    when(existingPermission.getPermissionLevel())
+            .thenReturn(DocumentPermission.PermissionLevel.READ);
 
     permissionService.revokePermission(
             10L, "owner@example.com", "target@example.com");
@@ -128,11 +131,11 @@ void revokePermissionDeletesExistingGrant() {
     verify(permissionRepository)
             .deleteByDocument_IdAndUser_Id(10L, 2L);
 
-    verify(auditService).record(
+    verify(auditService).recordInCurrentTransaction(
             "owner@example.com",
             "PERMISSION_REVOKE",
             10L,
-            "Permission revoked for target@example.com",
+            "Permission READ revoked for target@example.com",
             "SUCCESS");
 }
 
@@ -167,9 +170,8 @@ void revokePermissionDeletesExistingGrant() {
 void revokePermissionFailsWhenGrantDoesNotExist() {
     setUpOwnerAndTarget();
 
-    when(permissionRepository
-            .existsByDocument_IdAndUser_Id(10L, 2L))
-            .thenReturn(false);
+    when(permissionRepository.findByDocument_IdAndUser_Id(10L, 2L))
+            .thenReturn(Optional.empty());
 
     assertThrows(
             IllegalArgumentException.class,
@@ -179,11 +181,11 @@ void revokePermissionFailsWhenGrantDoesNotExist() {
     verify(permissionRepository, never())
             .deleteByDocument_IdAndUser_Id(10L, 2L);
 
-    verify(auditService, never()).record(
+    verify(auditService, never()).recordInCurrentTransaction(
             "owner@example.com",
             "PERMISSION_REVOKE",
             10L,
-            "Permission revoked for target@example.com",
+            "Permission READ revoked for target@example.com",
             "SUCCESS");
 }
 
@@ -201,11 +203,11 @@ void revokePermissionFailsWhenGrantDoesNotExist() {
         org.mockito.Mockito.doThrow(
                 new RuntimeException("Audit database unavailable"))
                 .when(auditService)
-                .record(
+                .recordInCurrentTransaction(
                         "owner@example.com",
                         "PERMISSION_GRANT",
                         10L,
-                        "Permission READ granted or updated for target@example.com",
+                        "Permission READ granted to target@example.com",
                         "SUCCESS");
 
         assertThrows(

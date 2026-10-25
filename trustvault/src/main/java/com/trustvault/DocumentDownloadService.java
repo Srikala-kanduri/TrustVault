@@ -55,7 +55,8 @@ public class DocumentDownloadService {
                     email,
                     "DOCUMENT_DOWNLOAD",
                     documentId,
-                    "Document downloaded");
+                    "Document downloaded: " + document.getTitle()
+                            + " (" + document.getOriginalFilename() + ")");
 
             return new DownloadedDocument(
                     content,

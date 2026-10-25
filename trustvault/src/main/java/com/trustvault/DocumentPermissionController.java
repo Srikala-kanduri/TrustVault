@@ -2,7 +2,8 @@
 package com.trustvault;
 
 import java.util.Locale;
-
+import java.util.List;
+import org.springframework.web.bind.annotation.GetMapping;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
@@ -67,4 +68,20 @@ public class DocumentPermissionController {
             String email,
             DocumentPermission.PermissionLevel permissionLevel) {
     }
+
+    @GetMapping
+public List<PermissionResponse> listPermissions(
+        @PathVariable Long documentId,
+        Authentication authentication) {
+
+    return permissionService.listPermissions(
+                    documentId,
+                    authentication.getName())
+            .stream()
+            .map(permission -> new PermissionResponse(
+                    documentId,
+                    permission.getUser().getEmail(),
+                    permission.getPermissionLevel()))
+            .toList();
+}
 }

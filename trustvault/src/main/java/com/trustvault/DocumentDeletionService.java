@@ -40,11 +40,23 @@ public class DocumentDeletionService {
 
         String actor = normalizeEmail(authenticatedEmail);
 
-        Document document = authorizationService.requireReadAccess(
-                documentId, actor);
+        Document document;
+        try {
+            document = authorizationService.requireReadAccess(
+                    documentId, actor);
+        } catch (AccessDeniedException exception) {
+            auditDeniedSafely(
+                    actor,
+                    documentId,
+                    "Document deletion denied: caller has no read permission");
+            throw exception;
+        }
 
         if (!document.getOwner().getEmail().equalsIgnoreCase(actor)) {
-            auditDeniedSafely(actor, documentId);
+            auditDeniedSafely(
+                    actor,
+                    documentId,
+                    "Only the document owner can delete it");
             throw new AccessDeniedException(
                     "Only the document owner can delete it");
         }
@@ -65,13 +77,12 @@ public class DocumentDeletionService {
             documentRepository.delete(document);
             documentRepository.flush();
 
-            // REQUIRES_NEW keeps the audit record independent of this transaction.
-           auditService.record(
-        actor,
-        "DOCUMENT_DELETE",
-        documentId,
-        "Document deletion initiated; awaiting transaction commit",
-        "PENDING");
+            auditService.recordInCurrentTransaction(
+                    actor,
+                    "DOCUMENT_DELETE",
+                    documentId,
+                    "Document deletion committed for " + document.getTitle(),
+                    "SUCCESS");
 
         } catch (RuntimeException | Error exception) {
     restoreAfterFailure(storageKey, quarantined, exception);
@@ -82,18 +93,6 @@ public class DocumentDeletionService {
                 new TransactionSynchronization() {
                     @Override
 public void afterCommit() {
-    try {
-        auditService.recordSuccess(
-                actor,
-                "DOCUMENT_DELETE",
-                documentId,
-                "Document deletion committed successfully"
-        );
-    } catch (RuntimeException auditException) {
-        // The database deletion is committed. Do not pretend it rolled back.
-        // The earlier PENDING audit entry remains for investigation.
-    }
-
     try {
         Files.deleteIfExists(quarantined);
     } catch (IOException cleanupException) {
@@ -135,13 +134,14 @@ public void afterCommit() {
         }
     }
 
-    private void auditDeniedSafely(String actor, Long documentId) {
+    private void auditDeniedSafely(
+            String actor, Long documentId, String details) {
         try {
             auditService.recordDenied(
                     actor,
                     "DOCUMENT_DELETE",
                     documentId,
-                    "Only the document owner can delete it");
+                    details);
         } catch (RuntimeException ignored) {
             // Preserve the original access-denied exception.
         }

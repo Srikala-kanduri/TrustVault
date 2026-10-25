@@ -1,173 +1,32 @@
-# TrustVault — Threat Model and Security Considerations
+# TrustVault Threat Model
 
-## 1. Introduction
+## Assets and authorization model
 
-TrustVault is designed to provide secure document sharing with controlled access and an auditable history of important activities. Since documents may contain confidential information, the application must prevent unauthorized access, modification, and deletion.
+Protected assets are user credentials, document metadata and file bytes, per-document grants, audit events, and the audit HMAC key. Authentication uses BCrypt-backed credentials and session authentication with CSRF protection. `OWNER` can manage documents they own; a named `VIEWER` can read or edit only when an explicit per-document `READ` or `EDIT` grant exists; `ADMIN` can view the global audit trail but has no automatic document access. Backend authorization is evaluated for each request.
 
-This document identifies the main security threats relevant to TrustVault, the protections planned to address them, and the implementation status of those protections.
+## Threats, controls, and remaining exposure
 
-## 2. Assets to Protect
+| Threat | Current controls | Remaining risk / accepted limitation |
+|---|---|---|
+| Unauthenticated or guessed API requests | Authentication is required for application APIs; CSRF is enabled for session-backed writes. | No account lockout or rate limiting is implemented. A compromised password can be used until changed. |
+| IDOR / access to another user's document | Read, edit, download, delete, and permission services check owner/grant rights server-side; listing/search are restricted to accessible documents. | A missed check in a future endpoint would be serious; keep authorization tests for every new route. |
+| Viewer privilege escalation | Upload is OWNER-only; document mutation requires owner or explicit edit grant; only the owner grants/revokes. | Admin does not have implicit document access. Administrative document recovery is not implemented. |
+| Stale grant after revocation | Each document request checks the current grant in the database; revocation applies to subsequent requests. | Bytes previously downloaded or copied cannot be recalled. |
+| Unauthorized upload or malicious file | Upload size caps and extension plus file-signature validation allow PDF, PNG, and JPEG. Storage uses server-generated keys outside static web assets. | No antivirus scanning or content disarm is implemented. Signature checks identify common formats but do not prove a file is safe. |
+| Path traversal or public file access | Generated storage keys and a private filesystem directory; download goes through an authorization-checked endpoint. | Production must mount the directory with least privilege, backups protected, and no web-server static mapping. |
+| Audit alteration or deletion | Audit entries are HMAC-chained and the chain head is separately authenticated; startup and audit responses verify the chain. Automated tests cover changed fields, deletion, reordering, truncation, modified chain heads, and rejection of a modified chain at startup. Application routes provide no audit edit/delete operation. | Compromise of the app host or HMAC key permits forgery. The chain head is in the same database; there is no external append-only anchor. Unsealed legacy rows cannot be verified, so startup now refuses to seal or modify them; they require a separately reviewed migration. |
+| Audit omission on denied requests | Relevant read/download/update/delete/permission denials are recorded; audit failure does not turn a denial into access. | Infrastructure failure can prevent an audit write; critical operations are designed to fail closed where success audit participates in the transaction. Review each new route. |
+| Secret leakage | Password hashes use BCrypt; keys/passwords are configuration values rather than source constants. | Operators must keep environment values out of logs, shell history, and source control. Rotate secrets after suspected exposure. |
+| Data loss / database compromise | Database constraints and transactional updates protect consistency. | Default development H2 is in-memory, not a production store. No tested production deployment, disaster-recovery plan, or persistent file backup is supplied. |
+| Cross-site request forgery / origin abuse | CSRF protection remains enabled; development CORS is limited to the local frontend origin. | Production HTTPS, cookie attributes, trusted origins, and reverse-proxy settings must be configured and tested before deployment. |
+| Resource exhaustion | Multipart upload limit is 10 MB per file and 11 MB per request. | No general API throttling, quota, or storage-capacity enforcement is implemented. |
 
-The main assets in TrustVault are:
+## Security tests
 
-- **User accounts:** Email addresses, password hashes, roles, and authentication sessions.
-- **Documents:** Uploaded files and their associated metadata.
-- **Document permissions:** Rules defining which users can read or modify individual documents.
-- **Audit records:** Records of document activity and permission changes.
-- **Configuration and credentials:** Database connection details, passwords, and deployment secrets.
+Backend tests exercise document authorization, direct download, revocation, upload validation, audit integrity, personal/global audit separation, failed audit writes, and deletion behavior. Run them from `trustvault` with `cmd.exe /c mvnw.cmd test`. The tests are regression evidence for covered cases, not proof that every possible route is safe. A useful mutation check is to remove an authorization call and confirm the corresponding negative test fails.
 
-## 3. User Roles
+## Deployment decisions and unfinished work
 
-TrustVault defines three application roles:
+The local app uses H2 in-memory storage and a local private-file directory. This is deliberately convenient for development but unsuitable for a live service. Before a public evaluation, configure a persistent production database and private persistent file volume, provision accounts securely, set a stable random HMAC key through a secret manager, use HTTPS, and test restore and revocation behavior. No deployed URL or demo video is included in this repository yet.
 
-- **ADMIN:** Intended to support administrative operations and activity monitoring.
-- **OWNER:** Intended to upload and manage owned documents and grant or revoke document permissions.
-- **VIEWER:** Intended to access documents only when the applicable permission allows it.
-
-Application roles alone must not grant access to every document. The backend must also verify the user's permission for the specific document and requested operation.
-
-## 4. Threats and Mitigations
-
-### 4.1 Unauthorized Authentication
-
-**Threat:** An attacker may attempt to access TrustVault using incorrect or stolen credentials.
-
-**Planned protections:**
-- Store passwords using a secure password-hashing algorithm.
-- Require authentication for protected endpoints.
-- Return generic login failure messages.
-- Avoid exposing passwords or sensitive authentication data in logs.
-
-**Current status:** BCrypt password hashing, a Spring Security authentication provider, and authentication-required request rules have been implemented. Additional authentication abuse protections still require review and testing.
-
-### 4.2 Unauthorized Document Access
-
-**Threat:** A user may attempt to access another user's document by changing a document ID in a URL or API request.
-
-**Planned protections:**
-- Check authorization on the server for every protected document operation.
-- Verify document ownership or an explicit permission before allowing access.
-- Apply authorization checks to viewing, downloading, editing, and deleting documents.
-- Return an appropriate denial response when access is not permitted.
-
-**Current status:** Document-specific authorization is a required security feature and must be verified once document management is implemented.
-
-### 4.3 Privilege Escalation
-
-**Threat:** A viewer may attempt to perform owner or administrator operations by modifying requests or parameters.
-
-**Planned protections:**
-- Enforce role checks on the backend.
-- Validate ownership and document permissions separately from general role checks.
-- Prevent users from changing their own role through ordinary document operations.
-
-**Current status:** The `ADMIN`, `OWNER`, and `VIEWER` roles and the initial authentication foundation exist. Complete role-based authorization tests remain necessary.
-
-### 4.4 Permission Revocation Abuse or Delay
-
-**Threat:** A user whose access has been revoked may continue accessing a document through an old link or an authorization decision based on outdated permissions.
-
-**Planned protections:**
-- Check current permissions for every new protected request.
-- Apply revocation changes to subsequent access attempts.
-- Avoid exposing permanent, unrestricted document URLs.
-- Test that revoked users cannot subsequently view or download protected documents.
-
-**Current status:** Pending implementation and verification of document permissions and protected file access.
-
-### 4.5 Unauthorized Document Modification or Deletion
-
-**Threat:** An unauthorized user may attempt to alter or delete a document.
-
-**Planned protections:**
-- Require appropriate write or delete permission on the backend.
-- Verify document ownership and permissions before making changes.
-- Record successful changes and relevant denied attempts in the audit history.
-
-**Current status:** Pending document-management implementation and authorization testing.
-
-### 4.6 Audit Log Tampering
-
-**Threat:** A user or attacker may attempt to alter or delete audit records to conceal activity.
-
-**Planned protections:**
-- Restrict audit record creation and access to trusted backend components.
-- Prevent ordinary users from editing or deleting audit events.
-- Record important events with the actor, action, target, timestamp, and outcome where applicable.
-- Evaluate stronger tamper-evidence mechanisms, such as hash chaining, for audit integrity.
-
-**Current status:** Audit logging and tamper-evidence mechanisms must be implemented and tested before they can be considered effective.
-
-### 4.7 Cross-Site Request Forgery (CSRF)
-
-**Threat:** A malicious website may attempt to make a user's authenticated browser submit an unwanted request.
-
-**Planned protections:**
-- Keep CSRF protection enabled for session-based authentication.
-- Require valid CSRF tokens for state-changing requests.
-- Configure cookie and browser security settings appropriately for deployment.
-
-**Current status:** Spring Security's default CSRF protection is retained. The frontend retrieves a CSRF token for login integration. All state-changing endpoints and deployment settings still require testing.
-
-### 4.8 Cross-Origin Request Abuse
-
-**Threat:** An untrusted website may attempt to interact with the backend from a browser.
-
-**Planned protections:**
-- Restrict allowed origins to the intended frontend.
-- Avoid permissive credentialed CORS configurations.
-- Review allowed headers and HTTP methods.
-
-**Current status:** CORS is configured for the local frontend origin `http://localhost:5173`. Production origins must be configured before deployment.
-
-### 4.9 Credential and Configuration Exposure
-
-**Threat:** Passwords, database credentials, or other secrets may be exposed through source control or logs.
-
-**Planned protections:**
-- Use environment variables or a managed secret store for credentials.
-- Keep real environment files out of Git.
-- Commit only example configuration containing placeholder values.
-- Avoid logging passwords, session identifiers, or sensitive document contents.
-
-**Current status:** The root `.gitignore` excludes environment files and allows `.env.example`. Repository contents and deployment configuration must still be checked for accidentally committed secrets.
-
-### 4.10 Unsafe File Uploads
-
-**Threat:** An attacker may upload oversized, unexpected, or malicious files.
-
-**Planned protections:**
-- Enforce file size limits.
-- Validate file types and content rather than trusting filenames or browser-supplied MIME types alone.
-- Generate server-controlled storage names.
-- Store uploaded files outside publicly accessible static directories.
-- Prevent path traversal and unauthorized file retrieval.
-
-**Current status:** Pending file-upload implementation and security testing.
-
-## 5. Security Testing Plan
-
-The following tests are required as the corresponding features are implemented:
-
-1. Unauthenticated users cannot access protected endpoints.
-2. A user cannot access another user's document without permission.
-3. A viewer cannot edit or delete documents without the required permission.
-4. Revoked access prevents subsequent protected requests.
-5. Invalid permission changes are rejected.
-6. Important successful and denied operations generate appropriate audit events.
-7. Ordinary users cannot alter or delete audit records.
-8. Invalid and oversized file uploads are rejected.
-9. CSRF protection works for state-changing requests.
-10. Credentials and sensitive information do not appear in source control or application logs.
-
-Test results must be recorded only after the corresponding tests have actually been run.
-
-## 6. Remaining Risks and Limitations
-
-TrustVault is still under development. The authentication foundation does not by itself establish that document authorization, file storage, permission revocation, or audit integrity is secure.
-
-Before deployment, the application requires implementation and verification of the remaining security controls, production database configuration, secure file storage, secret management, and end-to-end security tests.
-
-## 7. Review and Maintenance
-
-This threat model will be updated as new features are implemented, security tests reveal issues, and deployment decisions are finalized. Each mitigation should be considered complete only after its implementation has been reviewed and its relevant tests have passed.
+The product does not implement public links, folder-level inheritance, external identity providers, malware scanning, version history, soft-delete recovery, retention policies, or externally anchored audit heads. These are out of scope for the current build and should not be implied by the UI or documentation.

@@ -1,6 +1,6 @@
 
 package com.trustvault;
-
+import java.util.List;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 import java.util.Optional;
@@ -21,4 +21,6 @@ public interface DocumentPermissionRepository
             Long userId);
 
     void deleteByDocument_Id(Long documentId);
+    List<DocumentPermission> findAllByDocument_Id(Long documentId);
+    List<DocumentPermission> findAllByDocument_Owner_Id(Long ownerId);
 }

@@ -41,8 +41,17 @@ public class DocumentUploadService {
             MultipartFile file) throws IOException {
 
         String actor = normalizeEmail(authenticatedEmail);
+
+        AppUser owner = userRepository.findByEmail(actor).orElse(null);
+        if (owner == null || owner.getRole() != UserRole.OWNER) {
+            recordDeniedSafely(actor);
+            throw new AccessDeniedException(
+                    "Only document owners can upload documents");
+        }
+
         String storageKey = null;
         Long documentId = null;
+        boolean successAuditAttempted = false;
 
         try {
             fileValidator.validate(file);
@@ -73,11 +82,6 @@ public class DocumentUploadService {
                         "Invalid filename");
             }
 
-            AppUser owner = userRepository.findByEmail(actor)
-                    .orElseThrow(() ->
-                            new AccessDeniedException(
-                                    "Document access denied"));
-
             storageKey = storageService.store(file);
 
             try {
@@ -91,11 +95,14 @@ public class DocumentUploadService {
                 Document saved = documentRepository.saveAndFlush(document);
                 documentId = saved.getId();
 
-                auditService.recordSuccess(
+                successAuditAttempted = true;
+                auditService.recordInCurrentTransaction(
                         actor,
                         "DOCUMENT_UPLOAD",
                         documentId,
-                        "Document uploaded");
+                        "Document uploaded: " + title.trim()
+                                + " (" + originalFilename + ")",
+                        "SUCCESS");
 
                 return DocumentResponse.from(saved);
 
@@ -105,15 +112,17 @@ public class DocumentUploadService {
             }
 
         } catch (IOException | RuntimeException exception) {
-            try {
-                auditService.record(
-                        actor,
-                        "DOCUMENT_UPLOAD",
-                        documentId,
-                        "Upload failed",
-                        "FAILED");
-            } catch (RuntimeException auditException) {
-                exception.addSuppressed(auditException);
+            if (!successAuditAttempted) {
+                try {
+                    auditService.record(
+                            actor,
+                            "DOCUMENT_UPLOAD",
+                            documentId,
+                            "Upload failed",
+                            "FAILED");
+                } catch (RuntimeException auditException) {
+                    exception.addSuppressed(auditException);
+                }
             }
 
             throw exception;
@@ -137,5 +146,17 @@ public class DocumentUploadService {
         }
 
         return email.trim().toLowerCase(Locale.ROOT);
+    }
+
+    private void recordDeniedSafely(String actor) {
+        try {
+            auditService.recordDenied(
+                    actor,
+                    "DOCUMENT_UPLOAD",
+                    null,
+                    "Upload denied: only document owners may upload");
+        } catch (RuntimeException ignored) {
+            // Preserve the original authorization failure.
+        }
     }
 }

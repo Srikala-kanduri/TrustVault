@@ -12,4 +12,6 @@ public interface AuditLogRepository extends JpaRepository<AuditLog, Long> {
     List<AuditLog> findByDocumentIdOrderByOccurredAtDesc(Long documentId);
 
     List<AuditLog> findAllByOrderByOccurredAtDesc();
+
+    List<AuditLog> findAllByOrderByIdAsc();
 }

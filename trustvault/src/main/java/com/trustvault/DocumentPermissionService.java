@@ -2,7 +2,7 @@
 package com.trustvault;
 
 import java.util.Locale;
-
+import java.util.List;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -55,22 +55,29 @@ public class DocumentPermissionService {
                     .orElse(null);
 
             DocumentPermission savedPermission;
+            String permissionChangeDetails;
 
             if (existing != null) {
+                DocumentPermission.PermissionLevel previousLevel =
+                        existing.getPermissionLevel();
                 existing.setPermissionLevel(level);
                 savedPermission = existing;
+                permissionChangeDetails = "Permission for "
+                        + normalizeEmail(targetEmail) + " changed from "
+                        + previousLevel + " to " + level;
             } else {
                 DocumentPermission permission =
                         new DocumentPermission(document, target, level);
                 savedPermission = permissionRepository.save(permission);
+                permissionChangeDetails = "Permission " + level
+                        + " granted to " + normalizeEmail(targetEmail);
             }
 
             auditRequired(
                     normalizeEmail(requesterEmail),
                     "PERMISSION_GRANT",
                     documentId,
-                    "Permission " + level + " granted or updated for "
-                            + normalizeEmail(targetEmail),
+                    permissionChangeDetails,
                     "SUCCESS");
 
             return savedPermission;
@@ -113,14 +120,17 @@ public class DocumentPermissionService {
                         "The owner does not need a permission grant");
             }
 
-            boolean permissionExists =
-                    permissionRepository.existsByDocument_IdAndUser_Id(
-                            documentId, target.getId());
+            DocumentPermission existingPermission = permissionRepository
+                    .findByDocument_IdAndUser_Id(documentId, target.getId())
+                    .orElse(null);
 
-            if (!permissionExists) {
+            if (existingPermission == null) {
                 throw new IllegalArgumentException(
                         "No permission grant exists for this user");
             }
+
+            DocumentPermission.PermissionLevel revokedLevel =
+                    existingPermission.getPermissionLevel();
 
             permissionRepository.deleteByDocument_IdAndUser_Id(
                     documentId, target.getId());
@@ -129,7 +139,7 @@ public class DocumentPermissionService {
                     normalizeEmail(requesterEmail),
                     "PERMISSION_REVOKE",
                     documentId,
-                    "Permission revoked for "
+                    "Permission " + revokedLevel + " revoked for "
                             + normalizeEmail(targetEmail),
                     "SUCCESS");
 
@@ -151,7 +161,7 @@ public class DocumentPermissionService {
         }
     }
 
-    
+
     private void auditRequired(
             String actor,
             String action,
@@ -159,7 +169,7 @@ public class DocumentPermissionService {
             String details,
             String outcome) {
 
-        auditService.record(
+        auditService.recordInCurrentTransaction(
                 actor, action, documentId, details, outcome);
     }
 
@@ -212,4 +222,38 @@ public class DocumentPermissionService {
                     "Permission operation denied");
         }
     }
+
+
+@Transactional(readOnly = true)
+public List<DocumentPermission> listPermissions(
+        Long documentId,
+        String requesterEmail) {
+
+    AppUser requester = findUser(requesterEmail);
+    Document document = findDocument(documentId);
+
+    requireOwner(document, requester);
+
+    return permissionRepository.findAllByDocument_Id(documentId);
+}
+
+
+@Transactional(readOnly = true)
+public List<AccessGrantResponse> listAllGrants(
+        String requesterEmail) {
+
+    AppUser requester = findUser(requesterEmail);
+
+    return permissionRepository
+            .findAllByDocument_Owner_Id(requester.getId())
+            .stream()
+            .map(permission -> new AccessGrantResponse(
+                    permission.getDocument().getId(),
+                    permission.getDocument().getTitle(),
+                    permission.getUser().getEmail(),
+                    permission.getPermissionLevel()))
+            .toList();
+}
+
+
 }

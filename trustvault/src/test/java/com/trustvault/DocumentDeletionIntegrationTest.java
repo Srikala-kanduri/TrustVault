@@ -96,12 +96,12 @@ void failedDeletionAuditRollsBackDatabaseAndRestoresFile()
 
     doThrow(new RuntimeException("Simulated audit failure"))
             .when(auditService)
-            .record(
+            .recordInCurrentTransaction(
                     "rollback-owner@example.com",
                     "DOCUMENT_DELETE",
                     documentId,
-                    "Document deletion initiated; awaiting transaction commit",
-                    "PENDING");
+                    "Document deletion committed for Rollback Test",
+                    "SUCCESS");
 
     TransactionTemplate transactionTemplate =
             new TransactionTemplate(transactionManager);

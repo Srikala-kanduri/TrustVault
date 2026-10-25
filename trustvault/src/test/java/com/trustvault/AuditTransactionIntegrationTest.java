@@ -11,6 +11,7 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.support.TransactionTemplate;
+import java.util.UUID;
 
 @SpringBootTest
 @ActiveProfiles("test")
@@ -27,7 +28,7 @@ class AuditTransactionIntegrationTest {
 
     @Test
     void auditRecordSurvivesOuterTransactionRollback() {
-        String actor = "audit-transaction-test@example.com";
+        String actor = "audit-transaction-" + UUID.randomUUID() + "@example.com";
         String action = "AUDIT_TRANSACTION_TEST";
 
         TransactionTemplate transactionTemplate =
@@ -36,30 +37,20 @@ class AuditTransactionIntegrationTest {
         transactionTemplate.setPropagationBehavior(
                 TransactionDefinition.PROPAGATION_REQUIRED);
 
-        try {
-            transactionTemplate.executeWithoutResult(status -> {
-                auditService.recordSuccess(
-                        actor,
-                        action,
-                        null,
-                        "Verify independent audit transaction");
+        transactionTemplate.executeWithoutResult(status -> {
+            auditService.recordSuccess(
+                    actor,
+                    action,
+                    null,
+                    "Verify independent audit transaction");
 
-                status.setRollbackOnly();
-            });
+            status.setRollbackOnly();
+        });
 
-            var records =
-                    auditLogRepository.findByActorEmailOrderByOccurredAtDesc(
-                            actor);
+        var records = auditLogRepository.findByActorEmailOrderByOccurredAtDesc(actor);
 
-            assertTrue(records.stream().anyMatch(log ->
-                    action.equals(log.getAction())
-                            && "SUCCESS".equals(log.getOutcome())));
-
-        } finally {
-            auditLogRepository.findByActorEmailOrderByOccurredAtDesc(actor)
-                    .stream()
-                    .filter(log -> action.equals(log.getAction()))
-                    .forEach(auditLogRepository::delete);
-        }
+        assertTrue(records.stream().anyMatch(log ->
+                action.equals(log.getAction())
+                        && "SUCCESS".equals(log.getOutcome())));
     }
 }

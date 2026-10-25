@@ -8,6 +8,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
+import org.mockito.Mock;
 
 import java.io.IOException;
 import org.junit.jupiter.api.Test;
@@ -15,6 +16,11 @@ import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.Authentication;
 
 class DocumentControllerTest {
+    @Mock
+    private DocumentUpdateService updateService;
+
+    @org.mockito.Mock
+private DocumentFileReplacementService fileReplacementService;
 
     @Test
     void getDocumentChecksReadAccessBeforeReturningMetadata() {
@@ -28,9 +34,12 @@ class DocumentControllerTest {
         Authentication authentication = mock(Authentication.class);
         Document document = mock(Document.class);
         AppUser owner = mock(AppUser.class);
+        AuditService auditService = mock(AuditService.class);
 
         DocumentController controller = new DocumentController(
-                authorizationService, uploadService, downloadService,mock(DocumentDeletionService.class));
+                authorizationService, uploadService, downloadService,
+                mock(DocumentDeletionService.class), updateService,
+                fileReplacementService, auditService);
 
         when(authentication.getName()).thenReturn("owner@example.com");
         when(authorizationService.requireReadAccess(
@@ -52,6 +61,11 @@ class DocumentControllerTest {
 
         verify(authorizationService)
                 .requireReadAccess(10L, "owner@example.com");
+        verify(auditService).recordSuccess(
+                "owner@example.com",
+                "DOCUMENT_READ",
+                10L,
+                "Document details viewed: Contract");
     }
 
     @Test
@@ -65,8 +79,11 @@ class DocumentControllerTest {
 
         Authentication authentication = mock(Authentication.class);
 
+        AuditService auditService = mock(AuditService.class);
         DocumentController controller = new DocumentController(
-                authorizationService, uploadService, downloadService, mock(DocumentDeletionService.class));
+                authorizationService, uploadService, downloadService,
+                mock(DocumentDeletionService.class), updateService,
+                fileReplacementService, auditService);
 
         when(authentication.getName()).thenReturn("viewer@example.com");
 
@@ -78,6 +95,12 @@ class DocumentControllerTest {
         assertThrows(
                 AccessDeniedException.class,
                 () -> controller.getDocument(10L, authentication));
+
+        verify(auditService).recordDenied(
+                "viewer@example.com",
+                "DOCUMENT_READ",
+                10L,
+                "Document detail read denied");
     }
 
     
@@ -99,7 +122,8 @@ void deleteDocumentCallsDeletionService() throws IOException {
             authorizationService,
             uploadService,
             downloadService,
-            deletionService);
+            deletionService, updateService, fileReplacementService,
+            mock(AuditService.class));
 
     controller.deleteDocument(10L, authentication);
 
@@ -128,7 +152,8 @@ void deleteDocumentPropagatesAccessDenied() throws IOException {
             authorizationService,
             uploadService,
             downloadService,
-            deletionService);
+            deletionService, updateService, fileReplacementService,
+            mock(AuditService.class));
 
     assertThrows(
             AccessDeniedException.class,

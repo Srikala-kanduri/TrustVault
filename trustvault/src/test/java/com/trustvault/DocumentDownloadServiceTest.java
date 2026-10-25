@@ -36,6 +36,7 @@ class DocumentDownloadServiceTest {
 
             when(authorizationService.requireReadAccess(
                     1L, "owner@example.com")).thenReturn(document);
+            when(document.getTitle()).thenReturn("Contract");
             when(document.getStorageKey()).thenReturn(
                     "12345678-1234-1234-1234-123456789012");
             when(document.getOriginalFilename()).thenReturn("contract.pdf");
@@ -61,7 +62,7 @@ class DocumentDownloadServiceTest {
                     "owner@example.com",
                     "DOCUMENT_DOWNLOAD",
                     1L,
-                    "Document downloaded");
+                    "Document downloaded: Contract (contract.pdf)");
         } finally {
             Files.deleteIfExists(file);
         }

@@ -30,13 +30,16 @@ class AuditControllerTest {
     @Test
     void adminCanRetrieveAuditLogs() {
         AuditLogRepository repository = mock(AuditLogRepository.class);
-        AuditController controller = new AuditController(repository);
+        AuditService auditService = mock(AuditService.class);
+        AuditController controller = new AuditController(repository, auditService);
         Authentication authentication = mock(Authentication.class);
 
         setAuthorities(authentication, "ROLE_ADMIN");
 
         when(repository.findAllByOrderByOccurredAtDesc())
                 .thenReturn(List.of());
+        when(auditService.verifyIntegrity()).thenReturn(
+                new AuditService.IntegrityResult(true, null, "intact"));
 
         List<AuditLogResponse> result =
                 controller.getAuditLogs(authentication);
@@ -48,7 +51,8 @@ class AuditControllerTest {
     @Test
     void ordinaryUserCannotRetrieveAuditLogs() {
         AuditLogRepository repository = mock(AuditLogRepository.class);
-        AuditController controller = new AuditController(repository);
+        AuditService auditService = mock(AuditService.class);
+        AuditController controller = new AuditController(repository, auditService);
         Authentication authentication = mock(Authentication.class);
 
         setAuthorities(authentication, "ROLE_OWNER");

@@ -59,11 +59,11 @@ class PermissionAuditFailureIntegrationTest {
 
         doThrow(new RuntimeException("Simulated audit database failure"))
                 .when(auditService)
-                .record(
+                .recordInCurrentTransaction(
                         "audit-failure-owner@example.com",
                         "PERMISSION_GRANT",
                         documentId,
-                        "Permission READ granted or updated for audit-failure-viewer@example.com",
+                        "Permission READ granted to audit-failure-viewer@example.com",
                         "SUCCESS");
 
         TransactionTemplate transactionTemplate =
@@ -111,11 +111,11 @@ class PermissionAuditFailureIntegrationTest {
 
         doThrow(new RuntimeException("Simulated audit database failure"))
                 .when(auditService)
-                .record(
+                .recordInCurrentTransaction(
                         "revoke-audit-owner@example.com",
                         "PERMISSION_REVOKE",
                         documentId,
-                        "Permission revoked for revoke-audit-viewer@example.com",
+                        "Permission READ revoked for revoke-audit-viewer@example.com",
                         "SUCCESS");
 
         TransactionTemplate transactionTemplate =

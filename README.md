@@ -1,157 +1,104 @@
 # TrustVault
 
-**Secure document sharing with controlled access and an auditable activity history.**
+TrustVault is a secure document-sharing application. It provides per-document read/edit grants, private file storage, revocation, document search, and an HMAC-chained audit history.
 
-TrustVault is a document-sharing application being developed for the Snovasys Fresher Hiring Challenge 2026. Its goal is to let users share documents securely through explicit permissions while maintaining a record of important activities.
+## Current implementation
 
-## Project Status
+- Roles: `ADMIN` can inspect the verified global audit trail; `OWNER` can upload and manage documents they own; `VIEWER` can read or edit only documents with an explicit grant for the relevant permission. Admin status does not grant implicit document access.
+- Every document read, download, update, replacement, deletion, grant, and revocation is authorized by the backend. Revocation is checked on each request, so later requests are denied immediately. A file already downloaded cannot be recalled.
+- Search supports title, category, owner email, and a date range, over only the caller's accessible documents.
+- Upload validation checks extension and file signature for PDF, PNG, and JPEG, with Spring multipart size limits (10 MB per file).
+- Audit events include successful operations and relevant denied attempts. The HMAC chain is verified before audit views are returned. The key must remain secret and stable.
+- Owner and viewer accounts appear in personal audit views, which contain only events recorded under the signed-in email.
 
-TrustVault is under active development.
+## Requirements not yet satisfied
 
-### Implemented so far
+This repository does not currently include a deployed live URL, a five-minute demo video, or a completed submission write-up. The GitHub remote is configured, but public accessibility could not be verified from this environment. Deployment needs a persistent database and private file volume; the default H2 database is in-memory and loses data when the process stops. See [THREATS.md](THREATS.md) for known risks and [PROMPTS.md](PROMPTS.md) for AI usage notes.
 
-- Spring Boot backend foundation.
-- React frontend with a login interface.
-- Spring Security form-based authentication.
-- User roles: `ADMIN`, `OWNER`, and `VIEWER`.
-- BCrypt password hashing.
-- Database-backed user accounts using JPA.
-- Development admin initialization.
-- CSRF protection and local frontend CORS configuration.
-- Initial automated application-context test configuration.
+## Run locally on Windows
 
-### Planned features
+Prerequisites: JDK 21+, Node.js/npm, and internet access the first time Maven downloads dependencies.
 
-- Document upload, download, and metadata management.
-- Document ownership and per-document read/write permissions.
-- Permission granting and revocation.
-- Server-side authorization for every protected document operation.
-- Search and filtering of documents.
-- Audit events for document and permission activity.
-- Protection against unauthorized audit record modification.
-- Comprehensive authorization and security tests.
-- Production database and deployment configuration.
+Open PowerShell in the repository root. The following retrieves the same Windows user-level key each run and creates one only if none exists. It validates the existing key and stops without replacing it if it is malformed or too short. Passwords are read as secure strings and are not echoed. Do not commit these values.
 
-Features listed as planned are not yet claimed to be implemented.
-
-## Technology Stack
-
-**Frontend**
-- React
-- Vite
-- JavaScript
-- CSS
-
-**Backend**
-- Java
-- Spring Boot
-- Spring Security
-- Spring Data JPA
-- Maven Wrapper
-
-**Database**
-- H2 for local development and tests
-- PostgreSQL dependency included for planned deployment configuration
-
-## Project Structure
-
-```text
-TrustVault/
-├── .gitignore
-├── README.md
-├── PROMPTS.md
-├── THREATS.md
-├── trustvault/              # Spring Boot backend
-│   ├── pom.xml
-│   ├── mvnw
-│   └── src/
-└── trustvault-frontend/     # React frontend
-    ├── package.json
-    └── src/
+```powershell
+$key = [Environment]::GetEnvironmentVariable('TRUSTVAULT_AUDIT_HMAC_KEY', 'User')
+if (-not $key) {
+  $bytes = [byte[]]::new(32)
+  [System.Security.Cryptography.RandomNumberGenerator]::Fill($bytes)
+  $key = [Convert]::ToBase64String($bytes)
+  [Environment]::SetEnvironmentVariable('TRUSTVAULT_AUDIT_HMAC_KEY', $key, 'User')
+}
+try {
+  $keyBytes = [Convert]::FromBase64String($key)
+} catch {
+  throw 'Saved TRUSTVAULT_AUDIT_HMAC_KEY is not valid Base64; it was not changed.'
+}
+if ($keyBytes.Length -lt 32) {
+  [Array]::Clear($keyBytes, 0, $keyBytes.Length)
+  throw 'Saved TRUSTVAULT_AUDIT_HMAC_KEY decodes to fewer than 32 bytes; it was not changed.'
+}
+[Array]::Clear($keyBytes, 0, $keyBytes.Length)
+$env:TRUSTVAULT_AUDIT_HMAC_KEY = $key
+$env:TRUSTVAULT_DEV_ADMIN_ENABLED = 'true'
+$env:TRUSTVAULT_DEV_OWNER_ENABLED = 'true'
+$env:TRUSTVAULT_DEV_VIEWER_ENABLED = 'true'
+function Set-TrustVaultSecretFromPrompt([string]$Name, [string]$Prompt) {
+  $secure = Read-Host $Prompt -AsSecureString
+  if ($secure.Length -lt 12) { throw "$Name must be at least 12 characters." }
+  $pointer = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($secure)
+  try {
+    $plain = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($pointer)
+    [Environment]::SetEnvironmentVariable($Name, $plain, 'Process')
+  } finally {
+    [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($pointer)
+    $secure.Dispose()
+    Remove-Variable plain -ErrorAction SilentlyContinue
+  }
+}
+Set-TrustVaultSecretFromPrompt 'TRUSTVAULT_DEV_ADMIN_PASSWORD' 'Local admin password (12+ characters)'
+Set-TrustVaultSecretFromPrompt 'TRUSTVAULT_DEV_OWNER_PASSWORD' 'Local owner password (12+ characters)'
+Set-TrustVaultSecretFromPrompt 'TRUSTVAULT_DEV_VIEWER_PASSWORD' 'Local viewer password (12+ characters)'
+$env:SPRING_PROFILES_ACTIVE = 'dev'
 ```
 
-## Prerequisites
+The audit key must stay unchanged when reopening the app against the same database. With the default in-memory H2 database, audit data is lost on restart.
 
-Install the following before running the application:
+Start the backend in this terminal:
 
-- Java 21 or a compatible supported JDK
-- Node.js and npm
-- Git
-
-The project includes the Maven Wrapper, so a separate global Maven installation should not be necessary.
-
-## Running the Backend
-
-Open a terminal in the backend directory:
-
-```bash
-cd trustvault
+```powershell
+cd .\trustvault
+.\mvnw.cmd spring-boot:run
 ```
 
-Configure the development admin password using an environment variable before starting the application. Use a strong password of at least 12 characters and never commit it to Git.
+Start the frontend in a second PowerShell terminal from the repository root:
 
-In Windows Command Prompt:
-
-```bat
-set TRUSTVAULT_DEV_ADMIN_PASSWORD=YOUR_LOCAL_PASSWORD
-```
-
-Run the tests:
-
-```bat
-mvnw.cmd test
-```
-
-Start the backend:
-
-```bat
-mvnw.cmd spring-boot:run
-```
-
-The health endpoint is available locally at:
-
-```text
-http://localhost:8080/api/health
-```
-
-## Running the Frontend
-
-Open a second terminal in the project root:
-
-```bash
-cd trustvault-frontend
+```powershell
+cd .\trustvault-frontend
 npm install
 npm run dev
 ```
 
-Open the local URL printed by Vite, normally:
+Open the Vite URL, normally `http://localhost:5173`. Development accounts are `admin@trustvault.local`, `owner@trustvault.local`, and `viewer@trustvault.local`; use the passwords you entered above. Health check: `http://localhost:8080/api/health`.
 
-```text
-http://localhost:5173
+To run backend tests, open a terminal in `trustvault` and run:
+
+```powershell
+.\mvnw.cmd clean test
 ```
 
-The current frontend login integration is configured to communicate with the local backend.
+## Database and API
 
-## Security Documentation
+The default profile uses in-memory H2 for local development. `database/schema.sql` documents the PostgreSQL schema for a persistent installation; `database/setup.sql` applies it with `psql`. Production starts with `SPRING_PROFILES_ACTIVE=prod`, uses PostgreSQL validation (schema must be applied first), disables H2 and development account initialization, and requires the database URL/username/password, private storage path, stable audit key, and frontend origin as environment values. Point the frontend build at the deployed API with `VITE_API_BASE_URL`. Never use development account initializers in production. Production account provisioning is not yet automated; do not expose a public deployment until an owner/admin bootstrap procedure has been added and verified.
 
-- [`THREATS.md`](THREATS.md) — threat model, mitigations, and outstanding security work.
-- [`PROMPTS.md`](PROMPTS.md) — AI-assisted development log.
+Endpoint methods, roles, request fields, and CSRF expectations are documented in [API.md](API.md). For session-authenticated state-changing requests, first obtain the CSRF token from `GET /api/csrf` and send the returned token in `X-XSRF-TOKEN` with the session cookie.
 
-## Testing
+## Repository layout
 
-Run backend tests with:
-
-```bash
-cd trustvault
-mvnw.cmd test
-```
-
-The initial application-context test has completed successfully in the development environment. Comprehensive tests for document authorization, permission revocation, and audit integrity remain to be implemented.
-
-## Deployment
-
-Production deployment instructions, database configuration, secret management, persistent file storage, and a live application URL will be added after those components are implemented and verified.
-
-## Project Goal
-
-The goal is to build a secure document-sharing system in which access is checked by the backend, permissions can be revoked, and important activities can be audited. Security features will be described as complete only after implementation and verification.
+- `trustvault/`: Spring Boot backend and automated tests.
+- `trustvault-frontend/`: React/Vite user interface.
+- `database/`: PostgreSQL schema and setup script.
+- `API.md`: endpoint reference.
+- `THREATS.md`: threat model and accepted limitations.
+- `PROMPTS.md`: AI-assisted development record.
+- `SUBMISSION_DRAFT.md`: honest draft answers for the challenge submission form.

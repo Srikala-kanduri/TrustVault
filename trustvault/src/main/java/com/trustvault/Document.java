@@ -113,4 +113,15 @@ public class Document {
     public Instant getUpdatedAt() {
         return updatedAt;
     }
+
+public void updateMetadata(String title, String category) {
+    this.title = title;
+    this.category = category;
+}
+
+public void replaceFileMetadata(String originalFilename, String storageKey) {
+    this.originalFilename = originalFilename;
+    this.storageKey = storageKey;
+}
+
 }
